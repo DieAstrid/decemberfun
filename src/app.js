@@ -14,6 +14,8 @@ const moneyFmt = new Intl.NumberFormat('de-DE', { style: 'currency', currency: '
 const money = (n) => moneyFmt.format(Number(n) || 0);
 const dtFmt = new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
 const dt = (iso) => (iso ? dtFmt.format(new Date(iso)) : '–');
+const sessionDateFmt = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const sessionTimeFmt = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' });
 const pad = (n) => String(n).padStart(2, '0');
 const toLocalInput = (d) =>
   `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -95,7 +97,18 @@ function visitBadge(v) {
 }
 
 function header(title, back) {
-  return `<header class="page-head">${back ? `<a class="back" href="${back}" aria-label="Zurück">‹</a>` : ''}<h1>${esc(title)}</h1></header>`;
+  const theme = document.documentElement.dataset.theme ?? 'system';
+  const modes = [
+    ['system', 'Systemeinstellung', '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>'],
+    ['light', 'Hellmodus', '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>'],
+    ['dark', 'Dunkelmodus', '<path d="M20.5 13A9 9 0 0 1 11 3.5 9 9 0 1 0 20.5 13Z"/>'],
+  ];
+  return `<header class="page-head">${back ? `<a class="back" href="${back}" aria-label="Zurück">‹</a>` : ''}<h1>${esc(title)}</h1>
+    <div class="theme-toggle" role="group" aria-label="Darstellung">
+      ${modes.map(([value, label, icon]) => `<button type="button" class="theme-button" data-action="theme" data-value="${value}" aria-label="${label}" title="${label}" aria-pressed="${theme === value}">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>
+      </button>`).join('')}
+    </div></header>`;
 }
 
 function notFound() {
@@ -188,9 +201,15 @@ function viewArea(areaId) {
 function sessionItem(s, withArea = false) {
   const st = M.sessionStats(s);
   const area = withArea ? M.findArea(state, s.areaId) : null;
+  const started = new Date(s.startedAt);
+  const period = `${sessionDateFmt.format(started)}, ${sessionTimeFmt.format(started)}–${s.endedAt ? sessionTimeFmt.format(new Date(s.endedAt)) : '…'}`;
+  const elapsed = st.durationMinutes === null ? '' : `${st.durationMinutes} ${st.durationMinutes === 1 ? 'Minute' : 'Minuten'} · `;
   return `<a class="card" href="#/session/${s.id}">
-    <div class="row between"><strong>${withArea ? esc(area?.name) + ' · ' : ''}${dt(s.startedAt)}</strong><span>${money(st.amount)}</span></div>
-    <small>${s.endedAt ? `bis ${dt(s.endedAt)} · ${duration(st.durationMinutes)}` : '<span class="badge running-badge">läuft</span>'} · ${st.visited} besucht · ${st.donations} Spenden</small>
+    <div class="row between session-heading"><strong>${withArea ? esc(area?.name) + ' · ' : ''}${period}</strong><span>${money(st.amount)}</span></div>
+    <div class="session-meta">
+      <small>${elapsed}${st.visited} besucht · ${st.donations} ${st.donations === 1 ? 'Spende' : 'Spenden'}</small>
+      ${s.endedAt ? '<span class="badge success">abgeschlossen</span>' : '<span class="badge running-badge">läuft</span>'}
+    </div>
   </a>`;
 }
 
@@ -398,7 +417,7 @@ function viewHistory() {
   const total = state.sessions.reduce((n, s) => n + M.sessionAmount(s), 0);
   return `
   ${header('Historie')}
-  <section class="card row between"><span>${sessions.length} Sammelgänge</span><strong>${money(total)}</strong></section>
+  <section class="card row between"><span>${sessions.length} ${sessions.length === 1 ? 'Sammelgang' : 'Sammelgänge'}</span><strong>${money(total)}</strong></section>
   ${sessions.length ? '' : '<p class="empty">Noch keine Sammelgänge erfasst.</p>'}
   <div class="list">${sessions.map((s) => sessionItem(s, true)).join('')}</div>`;
 }
@@ -499,6 +518,23 @@ document.addEventListener('click', (ev) => {
   if (!el || el.matches('input[type=checkbox]')) return;
   const { action, id, apt, value } = el.dataset;
   switch (action) {
+    case 'theme':
+      try {
+        if (!['system', 'light', 'dark'].includes(value)) throw new Error('Ungültige Darstellung.');
+        if (value === 'system') {
+          localStorage.removeItem('sammelgebiet-theme');
+          delete document.documentElement.dataset.theme;
+        } else {
+          localStorage.setItem('sammelgebiet-theme', value);
+          document.documentElement.dataset.theme = value;
+        }
+        $main.querySelectorAll('[data-action="theme"]').forEach((button) => {
+          button.setAttribute('aria-pressed', String(button.dataset.value === value));
+        });
+      } catch (err) {
+        toast(`Darstellung konnte nicht gespeichert werden: ${err.message}`, 'error');
+      }
+      break;
     case 'start-session':
       try {
         const { state: next, session } = M.startSession(state, id);

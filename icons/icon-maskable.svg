@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#0f766e"/>
+  <rect width="512" height="512" fill="rgba(34, 117, 73, 1)"/>
   <g transform="translate(76 76) scale(.703)">
     <path d="M256 104 112 216v192h96V296h96v112h96V216z" fill="#fff"/>
-    <circle cx="368" cy="152" r="56" fill="#facc15"/>
-    <text x="368" y="174" font-family="Arial, sans-serif" font-size="64" font-weight="700" text-anchor="middle" fill="#854d0e">€</text>
+    <circle cx="368" cy="152" r="56" fill="rgba(245, 183, 89, 0.75)"/>
+    <text x="368" y="174" font-family="Arial, sans-serif" font-size="64" font-weight="700" text-anchor="middle" fill="#1c2523">€</text>
   </g>
 </svg>

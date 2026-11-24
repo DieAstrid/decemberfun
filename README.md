@@ -33,6 +33,8 @@ keine Laufzeit-Abhängigkeiten**. Alle Daten bleiben auf dem Gerät.
   CSV (Besuche, Sammelgänge, Gebiete & Eingänge). Wiederherstellung aus JSON, Import von
   Gebieten/Eingängen aus CSV (`Gebiet; Eingang; Adresse; Stockwerke; Wohnungen je Stockwerk`).
 - **PWA**: Web-App-Manifest, Service Worker mit Offline-Cache, installierbar auf dem Homescreen.
+- **Darstellung**: Im Seitenkopf zwischen System, Hell und Dunkel wählen.
+  Die Auswahl bleibt auf dem Gerät gespeichert; ohne eigene Auswahl gilt die Geräteeinstellung.
 
 ## Projektstruktur
 

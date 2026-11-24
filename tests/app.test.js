@@ -10,23 +10,24 @@ test('optical code gate, persisted status and apartment note interactions', asyn
   let area, entrance, session;
   ({ state, area } = M.addArea(state, { name: 'Testgebiet' }));
   ({ state, entrance } = M.addEntrance(state, area.id, { name: 'Testhaus', floors: 1, apartmentsPerFloor: 2 }));
-  ({ state, session } = M.startSession(state, area.id));
+  ({ state, session } = M.startSession(state, area.id, new Date(2026, 10, 24, 10, 52)));
   const aptId = entrance.apartments[0].id;
   const saved = new Map([['sammelgebiet-state', JSON.stringify(state)]]);
   const listeners = new Map();
   const windowListeners = new Map();
-  const main = { innerHTML: '', querySelector: () => null };
+  const main = { innerHTML: '', querySelector: () => null, querySelectorAll: () => [] };
   const nav = { innerHTML: '', hidden: false };
   const toast = { textContent: '', className: '' };
   const elements = { main, nav, toast };
   const globals = {
     document: {
+      documentElement: { dataset: {} },
       getElementById: (id) => elements[id],
       addEventListener: (event, fn) => listeners.set(event, fn),
     },
     window: { addEventListener: (event, fn) => windowListeners.set(event, fn), scrollTo() {} },
     location: { hash: `#/session/${session.id}/entrance/${entrance.id}`, protocol: 'http:' },
-    localStorage: { getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) },
+    localStorage: { getItem: (key) => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value), removeItem: (key) => saved.delete(key) },
     navigator: {},
     setInterval() {},
     setTimeout() {},
@@ -67,6 +68,27 @@ test('optical code gate, persisted status and apartment note interactions', asyn
   assert.match(main.innerHTML, /aria-label="Zugangscode"/);
   assert.match(main.innerHTML, /type="text" inputmode="numeric"/);
   assert.equal(nav.hidden, true);
+  assert.match(main.innerHTML, /aria-label="Darstellung"/);
+  const changeTheme = async (value) => {
+    await click({ action: 'theme', value });
+  };
+  const beforeThemeChange = main.innerHTML;
+  await changeTheme('dark');
+  assert.equal(document.documentElement.dataset.theme, 'dark');
+  assert.equal(saved.get('sammelgebiet-theme'), 'dark');
+  assert.equal(main.innerHTML, beforeThemeChange, 'switching does not replace forms or discard entered values');
+  await changeTheme('light');
+  assert.equal(document.documentElement.dataset.theme, 'light');
+  assert.equal(saved.get('sammelgebiet-theme'), 'light');
+  await changeTheme('system');
+  assert.equal(document.documentElement.dataset.theme, undefined);
+  assert.equal(saved.has('sammelgebiet-theme'), false);
+  const setItem = localStorage.setItem;
+  localStorage.setItem = () => { throw new Error('Speicher voll'); };
+  await changeTheme('dark');
+  localStorage.setItem = setItem;
+  assert.equal(document.documentElement.dataset.theme, undefined);
+  assert.match(toast.textContent, /Darstellung konnte nicht gespeichert werden: Speicher voll/);
   await submit({ form: 'access' }, { code: '4122026' });
   assert.equal(nav.hidden, true, 'leading zero is required');
   assert.match(toast.textContent, /stimmt nicht/);
@@ -106,4 +128,20 @@ test('optical code gate, persisted status and apartment note interactions', asyn
   await submit({ form: 'access' }, { code: '04122026' });
   assert.match(main.innerHTML, /class="btn small not-opened" aria-pressed="true"/);
   assert.match(main.innerHTML, /Hof; &lt;Tür&gt;\nAbends/);
+  await click({ action: 'opened', apt: entrance.apartments[1].id, value: '1' });
+  await click({ action: 'money', apt: entrance.apartments[1].id, value: '1' });
+  await submit({ form: 'amount', apt: entrance.apartments[1].id }, { amount: '12,50' });
+  navigate('#/history');
+  assert.match(main.innerHTML, /1 Sammelgang<\/span>/);
+  assert.match(main.innerHTML, /Testgebiet · 24\.11\.2026, 10:52–…/);
+  assert.match(main.innerHTML, /<span class="badge running-badge">läuft<\/span>/);
+  await submit({ form: 'end-session', id: session.id }, { endedAt: new Date(new Date(session.startedAt).getTime() + 18 * 60000).toISOString() });
+  assert.match(main.innerHTML, /Testgebiet · 24\.11\.2026, 10:52–11:10/);
+  assert.match(main.innerHTML, /18 Minuten · 2 besucht · 1 Spende/);
+  assert.match(main.innerHTML, /12,50/);
+  assert.match(main.innerHTML, /<span class="badge success">abgeschlossen<\/span>/);
+  assert.doesNotMatch(main.innerHTML, /<span class="badge running-badge">läuft<\/span>/);
+  await click({ action: 'reopen-session', id: session.id });
+  await submit({ form: 'end-session', id: session.id }, { endedAt: new Date(new Date(session.startedAt).getTime() + 60000).toISOString() });
+  assert.match(main.innerHTML, /1 Minute · 2 besucht · 1 Spende/);
 });

@@ -3,11 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f766e" />
+    <meta name="theme-color" content="rgba(34, 117, 73, 1)" />
     <meta name="description" content="Offline-fähige App zur Verwaltung eines Vereins-Sammelgebiets" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Sammelgebiet" />
     <title>Sammelgebiet</title>
+    <script id="theme-init">
+      try {
+        const theme = localStorage.getItem('sammelgebiet-theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch (err) {
+        console.warn('Gespeicherte Darstellung konnte nicht geladen werden.', err);
+      }
+    </script>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icons/icon.svg" />
