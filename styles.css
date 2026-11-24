@@ -109,6 +109,7 @@ input, textarea {
 .session-heading { align-items: flex-start; }
 .session-heading strong { min-width: 0; overflow-wrap: anywhere; }
 .session-heading > span { flex-shrink: 0; white-space: nowrap; }
+.session-heading > .history-amount { font-weight: 700; }
 .session-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-top: 6px; }
 .apt.done { opacity: .7; }
 .apt.recorded { border-left: 4px solid var(--primary); }

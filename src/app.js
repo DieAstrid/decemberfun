@@ -118,7 +118,7 @@ function visitBadge(v) {
 function header(title, back) {
   const theme = document.documentElement.dataset.theme ?? 'system';
   const modes = [
-    ['system', 'Systemeinstellung', '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>'],
+    ['system', 'Systemeinstellung', '<path d="M19 13a8 8 0 1 1-8-8 6.5 6.5 0 0 0 8 8Z"/><circle cx="17" cy="5" r="2"/><path d="M17 1v1m0 6v1m-4-4h1m6 0h1m-6.8-2.8.7.7m4.2 4.2.7.7m0-5.6-.7.7m-4.2 4.2-.7.7"/>'],
     ['light', 'Hellmodus', '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>'],
     ['dark', 'Dunkelmodus', '<path d="M20.5 13A9 9 0 0 1 11 3.5 9 9 0 1 0 20.5 13Z"/>'],
   ];
@@ -376,7 +376,7 @@ function sessionItem(s, withArea = false) {
   const period = `${sessionDateFmt.format(started)}, ${sessionTimeFmt.format(started)}–${s.endedAt ? sessionTimeFmt.format(new Date(s.endedAt)) : '…'}`;
   const elapsed = st.durationMinutes === null ? '' : `${st.durationMinutes} ${st.durationMinutes === 1 ? 'Minute' : 'Minuten'} · `;
   return `<a class="card" href="#/session/${s.id}">
-    <div class="row between session-heading"><strong>${withArea ? esc(area?.name) + ' · ' : ''}${period}</strong><span>${money(st.amount)}</span></div>
+    <div class="row between session-heading"><strong>${withArea ? esc(area?.name) + ' · ' : ''}${period}</strong><span${withArea ? ' class="history-amount"' : ''}>${money(st.amount)}</span></div>
     <div class="session-meta">
       <small>${elapsed}${st.visited} besucht · ${st.donations} ${st.donations === 1 ? 'Spende' : 'Spenden'}</small>
       ${s.endedAt ? '<span class="badge success">abgeschlossen</span>' : '<span class="badge running-badge">läuft</span>'}

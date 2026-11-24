@@ -133,6 +133,7 @@ test('optical code gate, persisted status and apartment note interactions', asyn
   await submit({ form: 'amount', apt: entrance.apartments[1].id }, { amount: '12,50' });
   navigate('#/history');
   assert.match(main.innerHTML, /1 Sammelgang<\/span>/);
+  assert.match(main.innerHTML, /<span class="history-amount">12,50/);
   assert.match(main.innerHTML, /Testgebiet · 24\.11\.2026, 10:52–…/);
   assert.match(main.innerHTML, /<span class="badge running-badge">läuft<\/span>/);
   await submit({ form: 'end-session', id: session.id }, { endedAt: new Date(new Date(session.startedAt).getTime() + 18 * 60000).toISOString() });
