@@ -78,7 +78,7 @@ test('session stats count statuses and reasons', () => {
   const st = M.sessionStats(M.findSession(s, session.id));
   assert.deepEqual(
     { ...st, durationMinutes: undefined },
-    { visited: 4, opened: 3, notOpened: 1, donations: 1, noCash: 1, noWill: 1, amount: 12, durationMinutes: undefined },
+    { visited: 4, opened: 3, notOpened: 1, donations: 1, noCash: 1, noWill: 1, comeBack: 0, amount: 12, durationMinutes: undefined },
   );
 });
 
@@ -135,9 +135,44 @@ test('permanently skipped apartments stay out of new sessions without changing h
   assert.equal(M.apartmentHistory(s, area.id, apt(0, 1)).length, 2);
 });
 
+test('come-back reopens an apartment until a later final visit, including across sessions', () => {
+  let { s, area, entrance, apt } = setup();
+  const aptId = apt(0, 1);
+  const recordSession = (day, result) => {
+    let session;
+    ({ state: s, session } = M.startSession(s, area.id, new Date(`2026-11-${day}T10:00:00Z`)));
+    s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: aptId, ...result }, new Date(`2026-11-${day}T10:10:00Z`));
+    s = M.endSession(s, session.id, new Date(`2026-11-${day}T11:00:00Z`));
+    return session;
+  };
+  recordSession('01', { opened: true, moneyReceived: true, amount: 5 });
+  assert.equal(M.apartmentStatus(s, area.id, aptId).done, true);
+  recordSession('02', { opened: true, moneyReceived: false, reason: M.REASONS.COME_BACK });
+  assert.equal(M.apartmentStatus(s, area.id, aptId).done, false);
+  assert.deepEqual(M.entranceCollectionStats(s, area.id, entrance.id), { total: 4, done: 0, skipped: 0, open: 4 });
+  assert.deepEqual(M.overallApartmentStats(s), { total: 4, open: 3, revisit: 1, done: 0, skipped: 0 });
+  let third;
+  ({ state: s, session: third } = M.startSession(s, area.id, new Date('2026-11-03T10:00:00Z')));
+  assert.ok(M.apartmentsForSession(s, third.id, entrance.id, { showDone: false }).some((item) => item.id === aptId));
+  s = M.recordVisit(s, third.id, { entranceId: entrance.id, apartmentId: aptId, opened: false }, new Date('2026-11-03T10:10:00Z'));
+  s = M.endSession(s, third.id, new Date('2026-11-03T11:00:00Z'));
+  assert.equal(M.apartmentStatus(s, area.id, aptId).done, false);
+  s = M.updateApartmentSkip(s, area.id, entrance.id, aptId, true, '');
+  assert.deepEqual(M.overallApartmentStats(s), { total: 4, open: 3, revisit: 0, done: 0, skipped: 1 });
+  s = M.updateApartmentSkip(s, area.id, entrance.id, aptId, false, '');
+  recordSession('04', { opened: true, moneyReceived: false, reason: M.REASONS.NO_CASH });
+  assert.equal(M.apartmentStatus(s, area.id, aptId).done, true);
+  assert.deepEqual(M.overallApartmentStats(s), { total: 4, open: 3, revisit: 0, done: 1, skipped: 0 });
+  assert.equal(M.apartmentHistory(s, area.id, aptId).length, 4);
+  const withOffsets = structuredClone(s);
+  withOffsets.sessions[1].visits[0].at = '2026-11-04T11:30:00+02:00';
+  assert.equal(M.apartmentStatus(withOffsets, area.id, aptId).done, true, 'timestamps with offsets are ordered by actual time');
+});
+
 test('isVisitFinal rules', () => {
   assert.equal(M.isVisitFinal({ opened: false }), false);
   assert.equal(M.isVisitFinal({ opened: true, moneyReceived: true }), true);
   assert.equal(M.isVisitFinal({ opened: true, moneyReceived: false, reason: M.REASONS.NO_CASH }), true);
   assert.equal(M.isVisitFinal({ opened: true, moneyReceived: false, reason: M.REASONS.NO_WILL }), true);
+  assert.equal(M.isVisitFinal({ opened: true, moneyReceived: false, reason: M.REASONS.COME_BACK }), false);
 });

@@ -32,7 +32,8 @@ let adminConfigError = false;
 let recoveryCodeToShow = '';
 let userEmail = '';
 const drafts = new Map(); // apartmentId -> partial visit being entered
-let showDone = localStorage.getItem('showDone') === '1';
+const collapsedFloors = new Set();
+let showDone = localStorage.getItem('showDone') !== '0';
 let entranceSort = ['name-asc', 'name-desc'].includes(localStorage.getItem('entranceSort')) ? 'name-asc' : 'open';
 let hideCompletedEntrances = localStorage.getItem('hideCompletedEntrances') === '1';
 const ADMIN_KEY = 'sammelgebiet-admin';
@@ -113,15 +114,16 @@ function progressCard(p, title = 'Fortschritt', extra = '') {
 
 function apartmentOverview(stats) {
   const categories = [
-    ['open', 'Offen', stats.open],
     ['done', 'Erledigt', stats.done],
+    ['revisit', 'Nochmal besuchen', stats.revisit],
+    ['open', 'Offen', stats.open],
     ['skipped', 'Übersprungen', stats.skipped],
   ];
   return `<section class="apartment-overview" aria-labelledby="apartment-overview-title">
     <h3 id="apartment-overview-title">Wohnungen im Überblick</h3>
     <div class="apartment-chart" aria-hidden="true">${categories.map(([key, , count]) => `<span class="apartment-chart-${key}" style="width:${stats.total ? (count / stats.total) * 100 : 0}%"></span>`).join('')}</div>
     <ul class="apartment-legend">${categories.map(([key, label, count]) => `<li><span class="apartment-dot apartment-chart-${key}" aria-hidden="true"></span><span>${label}: <strong>${count}</strong></span></li>`).join('')}</ul>
-    <p class="hint">${stats.total ? 'Übersprungene Wohnungen zählen hier nur als übersprungen, auch wenn sie bereits erledigt waren.' : 'Noch keine Wohnungen angelegt.'}</p>
+    <p class="hint">${stats.total ? 'Erledigt sind Wohnungen die entweder gespendet oder die Spende abgelehnt haben' : 'Noch keine Wohnungen angelegt.'}</p>
   </section>`;
 }
 
@@ -178,7 +180,27 @@ function viewHome() {
       .join('')}
   </div>
   ${state.areas.length ? '' : '<p class="empty">Noch keine Sammelgebiete. Lege dein erstes Gebiet an.</p>'}
+  ${state.areas.length === 1
+    ? sessionStartButton(state.areas[0])
+    : state.areas.length > 1
+      ? '<a class="btn primary block" href="#/start-session">▶ Sammelgang starten</a>'
+      : '<button class="btn primary block" disabled>▶ Sammelgang starten</button>'}
   <a class="btn primary block" href="#/area/new">＋ Neues Sammelgebiet</a>`;
+}
+
+function sessionStartButton(area) {
+  const running = M.activeSession(state, area.id);
+  return running
+    ? `<a class="btn primary block" href="#/session/${encodeURIComponent(running.id)}">▶ Sammelgang fortsetzen</a>`
+    : `<button class="btn primary block" data-action="start-session" data-id="${esc(area.id)}" ${area.entrances.length ? '' : 'disabled'}>▶ Sammelgang starten</button>${area.entrances.length ? '' : '<p class="hint">Lege zuerst einen Eingang für dieses Sammelgebiet an.</p>'}`;
+}
+
+function viewSessionStart() {
+  return `${header('Sammelgebiet auswählen', '#/')}
+    ${state.areas.length ? state.areas.map((area) => `<section class="card">
+      <h2>${esc(area.name)}</h2>
+      ${sessionStartButton(area)}
+    </section>`).join('') : '<p class="empty">Noch keine Sammelgebiete. Lege zuerst ein Gebiet an.</p>'}`;
 }
 
 function viewAdminHome() {
@@ -265,7 +287,7 @@ function viewManagedEntrance(areaId, entranceId) {
   <p class="hint">${esc(area.name)}${entrance.address ? ` · ${esc(entrance.address)}` : ''}</p>
   <section class="card stats"><div><strong>${entrance.apartments.length}</strong><small>Wohnungen</small></div></section>
   ${M.groupByFloor(entrance.apartments).reverse().map((floor) => `<section class="floor"><h3>${floor.label}</h3><div class="list">
-    ${floor.apartments.map((apt) => `<a class="card row between" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/apt/${encodeURIComponent(apt.id)}"><span>Whg. ${apt.index}</span>${apt.alwaysSkip ? '<span class="badge">Wird übersprungen</span>' : '<span>›</span>'}</a>`).join('')}
+    ${floor.apartments.map((apt) => `<a class="card row between" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/apt/${encodeURIComponent(apt.id)}"><span>Whg. ${esc(M.apartmentNumber(apt))}</span>${apt.alwaysSkip ? '<span class="badge">Wird übersprungen</span>' : '<span>›</span>'}</a>`).join('')}
   </div></section>`).join('')}
   <a class="btn block" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/edit">Eingang bearbeiten</a>
   <button class="btn danger block" data-action="delete-entrance" data-area="${esc(area.id)}" data-id="${esc(entrance.id)}">Eingang löschen</button>`;
@@ -275,7 +297,7 @@ function viewManagedApartment(areaId, entranceId, aptId) {
   const entrance = M.findEntrance(state, areaId, entranceId);
   const apt = entrance?.apartments.find((item) => item.id === aptId);
   if (!apt) return notFound();
-  return `${header(`${entrance.name} · ${apt.label}`, `#/area/${encodeURIComponent(areaId)}/entrance/${encodeURIComponent(entranceId)}`)}
+  return `${header(`${entrance.name} · ${M.floorLabel(apt.floor)} · Whg. ${M.apartmentNumber(apt)}`, `#/area/${encodeURIComponent(areaId)}/entrance/${encodeURIComponent(entranceId)}`)}
     ${apartmentSkipForm(areaId, entranceId, apt)}`;
 }
 
@@ -487,7 +509,7 @@ function viewEntrance(areaId, entranceId) {
           const note = Array.from(apt.note ?? '');
           const preview = note.length > 50 ? `${note.slice(0, 47).join('')}...` : note.join('');
           return `<a class="card row between apt ${s.done ? 'done' : ''}" href="#/area/${a.id}/entrance/${e.id}/apt/${encodeURIComponent(apt.id)}">
-            <span class="apt-summary">Whg. ${apt.index}${s.done ? ' ✓' : ''}<br><small>${s.visits} Besuch(e)</small>${note.length ? `<small class="apt-note" title="${esc(apt.note)}">${esc(preview)}</small>` : ''}</span>${apt.alwaysSkip ? '<span class="badge">Wird übersprungen</span>' : last ? visitBadge(last) : '<span class="badge">nie besucht</span>'}</a>`;
+            <span class="apt-summary">Whg. ${esc(M.apartmentNumber(apt))}${s.done ? ' ✓' : ''}<br><small>${s.visits} Besuch(e)</small>${note.length ? `<small class="apt-note" title="${esc(apt.note)}">${esc(preview)}</small>` : ''}</span>${apt.alwaysSkip ? '<span class="badge">Wird übersprungen</span>' : last ? visitBadge(last) : '<span class="badge">nie besucht</span>'}</a>`;
         })
         .join('')}
       </div></section>`,
@@ -503,8 +525,8 @@ function viewApartment(areaId, entranceId, aptId) {
   const history = M.apartmentHistory(state, areaId, apt.id).reverse();
   const st = M.apartmentStatus(state, areaId, apt.id);
   return `
-  ${header(`${e.name} · ${apt.label}`, `#/area/${areaId}/entrance/${e.id}`)}
-  <p class="card">${apt.alwaysSkip ? 'Diese Wohnung wird in Sammelgängen übersprungen.' : st.done ? '✓ Abgearbeitet – wird in neuen Sammelgängen standardmäßig ausgeblendet.' : 'Noch offen – erscheint in neuen Sammelgängen.'}</p>
+  ${header(`${e.name} · ${M.floorLabel(apt.floor)} · Whg. ${M.apartmentNumber(apt)}`, `#/area/${areaId}/entrance/${e.id}`)}
+  <p class="card">${apt.alwaysSkip ? 'Diese Wohnung wird in Sammelgängen übersprungen.' : st.done ? '✓ Abgearbeitet – kann in Sammelgängen ausgeblendet werden.' : 'Noch offen – erscheint in neuen Sammelgängen.'}</p>
   ${apartmentSkipForm(areaId, e.id, apt)}
   ${apartmentNoteForm(areaId, e.id, apt)}
   <h2>Historie</h2>
@@ -525,7 +547,7 @@ function apartmentSkipForm(areaId, entranceId, apt) {
 function apartmentNoteForm(areaId, entranceId, apt, readOnly = false) {
   return `<form class="form apartment-note" data-form="apartment-note" data-area="${esc(areaId)}" data-entrance="${esc(entranceId)}" data-apt="${esc(apt.id)}">
     <label>Wohnungsnotiz<textarea name="note" rows="2" ${readOnly ? 'readonly' : ''}>${esc(apt.note)}</textarea></label>
-    ${readOnly ? '' : '<button class="btn small">Notiz speichern</button>'}
+    ${readOnly ? '' : '<button class="btn small note-save">Notiz speichern</button>'}
   </form>`;
 }
 
@@ -548,6 +570,7 @@ function viewSession(sessionId) {
     <div><strong>${st.donations}</strong><small>Spenden</small></div>
     <div><strong>${st.noCash + st.noWill}</strong><small>abgelehnt</small></div>
   </section>
+  ${st.comeBack ? `<p class="hint">Komme wieder: ${st.comeBack}</p>` : ''}
   ${progressCard(M.areaProgress(state, a.id), 'Gebietsfortschritt')}
   <form class="card form" data-form="session-amount" data-id="${s.id}">
     <label>Ist-Betrag dieses Sammelgangs (€)
@@ -561,7 +584,7 @@ function viewSession(sessionId) {
     ${a.entrances
       .map((e) => {
         const all = M.apartmentsForSession(state, s.id, e.id, { showDone: true });
-        const pending = all.filter((x) => !x.status.doneBefore);
+        const pending = all.filter((x) => !x.status.doneBefore || !x.status.done);
         const doneNow = pending.filter((x) => x.status.current).length;
         return `<a class="card row between" href="#/session/${s.id}/entrance/${e.id}">
           <span><strong>${esc(e.name)}</strong><br><small>${doneNow}/${pending.length} in diesem Gang erfasst · ${all.length - pending.length} bereits erledigt</small></span><span>›</span></a>`;
@@ -583,33 +606,39 @@ function aptRecorder(s, apt, entranceId) {
   const prev = apt.status.lastVisit;
   const readOnly = Boolean(s.endedAt);
   const id = esc(apt.id);
+  const opened = draft ? true : cur?.opened === true;
   let controls = '';
   if (!readOnly) {
-    if (!draft) {
-      controls = `<div class="btn-row">
-        <button class="btn small ok" data-action="opened" data-apt="${id}" data-value="1">Geöffnet</button>
-        <button class="btn small ${cur?.opened === false ? 'not-opened' : ''}" aria-pressed="${cur?.opened === false}" data-action="opened" data-apt="${id}" data-value="0">Nicht geöffnet</button>
-        ${cur ? `<button class="btn small ghost" data-action="clear-visit" data-apt="${id}" aria-label="Zurücksetzen">↺</button>` : ''}
-      </div>`;
-    } else if (draft.moneyReceived === undefined) {
-      controls = `<p class="q">Geld erhalten?</p><div class="btn-row">
+    controls = `<div class="btn-row">
+      <button class="btn small ${opened ? 'ok' : 'unselected'}" aria-pressed="${opened}" data-action="opened" data-apt="${id}" data-value="1">Geöffnet</button>
+      <button class="btn small ${!draft && cur?.opened === false ? 'not-opened' : ''}" aria-pressed="${!draft && cur?.opened === false}" data-action="opened" data-apt="${id}" data-value="0">Nicht geöffnet</button>
+      ${cur ? `<button class="btn small ghost" data-action="clear-visit" data-apt="${id}" aria-label="Zurücksetzen">↺</button>` : ''}
+    </div>`;
+    if (draft?.moneyReceived === undefined && draft) {
+      controls += `<p class="q">Geld erhalten?</p><div class="btn-row">
         <button class="btn small ok" data-action="money" data-apt="${id}" data-value="1">Ja</button>
         <button class="btn small" data-action="money" data-apt="${id}" data-value="0">Nein</button>
         <button class="btn small ghost" data-action="cancel-draft" data-apt="${id}">Abbrechen</button></div>`;
-    } else if (draft.moneyReceived) {
-      controls = `<form class="btn-row" data-form="amount" data-apt="${id}">
+    } else if (draft?.moneyReceived) {
+      controls += `<form class="btn-row" data-form="amount" data-apt="${id}">
         <input name="amount" inputmode="decimal" placeholder="Betrag € (optional)" data-autofocus>
         <button class="btn small primary">Speichern</button>
         <button type="button" class="btn small ghost" data-action="cancel-draft" data-apt="${id}">✕</button></form>`;
-    } else {
-      controls = `<p class="q">Grund?</p><div class="btn-row">
+    } else if (draft) {
+      controls += `<p class="q">Grund?</p><div class="btn-row">
         <button class="btn small" data-action="reason" data-apt="${id}" data-value="${M.REASONS.NO_CASH}">Kein Bargeld</button>
         <button class="btn small" data-action="reason" data-apt="${id}" data-value="${M.REASONS.NO_WILL}">Kein Wille</button>
+        <button class="btn small" data-action="reason" data-apt="${id}" data-value="${M.REASONS.COME_BACK}">Komme wieder</button>
         <button class="btn small ghost" data-action="cancel-draft" data-apt="${id}">✕</button></div>`;
     }
   }
-  return `<div class="card apt ${cur ? 'recorded' : ''} ${apt.status.doneBefore ? 'done' : ''}" id="apt-${id}">
-    <div class="row between"><strong>Whg. ${apt.index}</strong>${cur ? visitBadge(cur) : apt.status.doneBefore ? '<span class="badge success">✓ erledigt</span>' : visitBadge(null)}</div>
+  return `<div class="card apt ${cur ? 'recorded' : ''} ${apt.status.doneBefore && apt.status.done ? 'done' : ''}" id="apt-${id}">
+    <div class="row between"><strong>Whg. ${esc(M.apartmentNumber(apt))}</strong>${cur ? visitBadge(cur) : apt.status.doneBefore ? '<span class="badge success">✓ erledigt</span>' : visitBadge(null)}</div>
+    ${readOnly ? '' : `<details class="apartment-number"><summary>Wohnungsnummer ändern</summary>
+      <form class="form" data-form="apartment-number" data-area="${esc(s.areaId)}" data-entrance="${esc(entranceId)}" data-apt="${id}">
+        <label>Wohnungsnummer<input name="number" value="${esc(apt.customNumber)}" placeholder="${esc(apt.index)}"></label>
+        <button class="btn small">Nummer speichern</button>
+      </form></details>`}
     ${prev ? `<small class="prev">Zuletzt (${dt(prev.at)}): ${visitBadge(prev)}</small>` : ''}
     ${controls}
     ${apartmentNoteForm(s.areaId, entranceId, apt, readOnly)}
@@ -633,7 +662,7 @@ function viewSessionEntrance(sessionId, entranceId) {
   ${skipped ? `<p class="hint">${skipped} ${skipped === 1 ? 'Wohnung wird' : 'Wohnungen werden'} immer übersprungen. Die Einstellung ist in der Wohnungsverwaltung änderbar.</p>` : ''}
   ${apts.length ? '' : '<p class="empty">Keine Wohnungen für diesen Sammelgang angezeigt.</p>'}
   ${floors
-    .map((f) => `<section class="floor"><h3>${f.label}</h3><div class="list">${f.apartments.map((apt) => aptRecorder(s, apt, e.id)).join('')}</div></section>`)
+    .map((f) => `<details class="floor session-floor" data-floor="${f.floor}" ${collapsedFloors.has(f.floor) ? '' : 'open'}><summary><h3>${f.label}</h3></summary><div class="list">${f.apartments.map((apt) => aptRecorder(s, apt, e.id)).join('')}</div></details>`)
     .join('')}
   <a class="btn block" href="#/session/${s.id}">Zurück zum Sammelgang</a>`;
 }
@@ -705,6 +734,7 @@ function route() {
     return ['home', notFound()];
   }
   if (!p0) return ['home', viewHome()];
+  if (p0 === 'start-session') return ['home', viewSessionStart()];
   if (p0 === 'history') return ['history', viewHistory()];
   if (p0 === 'data') return ['data', viewData()];
   if (p0 === 'area') {
@@ -860,7 +890,10 @@ document.addEventListener('click', (ev) => {
       if (value === '1') {
         drafts.set(apt, { opened: true });
         render();
-      } else saveVisit(apt, { opened: false });
+      } else {
+        drafts.delete(apt);
+        saveVisit(apt, { opened: false });
+      }
       break;
     case 'money':
       drafts.set(apt, { opened: true, moneyReceived: value === '1' });
@@ -874,6 +907,7 @@ document.addEventListener('click', (ev) => {
       render();
       break;
     case 'clear-visit':
+      drafts.delete(apt);
       act((st) => M.clearVisit(st, currentSessionId(), apt));
       break;
     case 'export-json':
@@ -898,6 +932,14 @@ document.addEventListener('click', (ev) => {
       break;
   }
 });
+
+document.addEventListener('toggle', (ev) => {
+  const el = ev.target;
+  if (!el.matches('details.session-floor')) return;
+  const floor = Number(el.dataset.floor);
+  if (el.open) collapsedFloors.delete(floor);
+  else collapsedFloors.add(floor);
+}, true);
 
 document.addEventListener('change', async (ev) => {
   const el = ev.target;
@@ -1077,6 +1119,10 @@ document.addEventListener('submit', async (ev) => {
         toast(err.message, 'error');
       }
       break;
+    case 'apartment-number':
+      if (accessMode !== 'legacy' || !accessConfirmed) return;
+      act((st) => M.updateApartmentNumber(st, form.dataset.area, form.dataset.entrance, form.dataset.apt, f.number), 'Wohnungsnummer gespeichert');
+      break;
     case 'apartment-note':
       if (accessMode !== 'legacy') return;
       act((st) => M.updateApartmentNote(st, form.dataset.area, form.dataset.entrance, form.dataset.apt, f.note), 'Notiz gespeichert');
@@ -1141,6 +1187,7 @@ document.addEventListener('submit', async (ev) => {
 
 window.addEventListener('hashchange', () => {
   drafts.clear();
+  collapsedFloors.clear();
   render();
   window.scrollTo(0, 0);
 });

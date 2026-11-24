@@ -83,6 +83,34 @@ test('skip settings survive JSON backups and entrance edits; older apartments re
   assert.throws(() => D.importJson(D.exportJson(invalid)), /ungültige Überspringen-Einstellung/);
 });
 
+test('custom apartment numbers and come-back reasons survive backups, edits and CSV export', () => {
+  let { s, area, entrance, session } = sample();
+  const aptId = entrance.apartments[0].id;
+  s = M.updateApartmentNote(s, area.id, entrance.id, aptId, 'Notiz');
+  s = M.updateApartmentNumber(s, area.id, entrance.id, aptId, '  12<A>  ');
+  s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: aptId, opened: true, moneyReceived: false, reason: M.REASONS.COME_BACK });
+  s = D.importJson(D.exportJson(s));
+  s = M.updateEntrance(s, area.id, entrance.id, { floors: 2, apartmentsPerFloor: '1,2' });
+  const apt = M.findEntrance(s, area.id, entrance.id).apartments[0];
+  assert.equal(apt.id, aptId);
+  assert.equal(apt.note, 'Notiz');
+  assert.equal(M.apartmentNumber(apt), '12<A>');
+  assert.equal(s.sessions[0].visits.find((v) => v.apartmentId === aptId).reason, M.REASONS.COME_BACK);
+  assert.equal(M.sessionStats(s.sessions[0]).comeBack, 1);
+  assert.equal(M.apartmentStatus(s, area.id, aptId).done, false);
+  const visits = D.parseCsv(D.exportVisitsCsv(s));
+  const row = visits.find((r) => r[4] === '12<A>');
+  assert.equal(row[11], 'Komme wieder');
+  assert.equal(D.parseCsv(D.exportApartmentsCsv(s))[1][4], '12<A>');
+  const sessions = D.parseCsv(D.exportSessionsCsv(s));
+  assert.equal(sessions[1][sessions[0].indexOf('Komme wieder')], '1');
+  s = M.updateApartmentNumber(s, area.id, entrance.id, aptId, '');
+  assert.equal(M.apartmentNumber(D.importJson(D.exportJson(s)).areas[0].entrances[0].apartments[0]), '1');
+  const invalid = structuredClone(s);
+  invalid.areas[0].entrances[0].apartments[0].customNumber = 12;
+  assert.throws(() => D.importJson(D.exportJson(invalid)), /ungültige Wohnungsnummer/);
+});
+
 test('CSV escaping and parsing round-trip', () => {
   const rows = [['a;b', 'say "hi"', 'line\nbreak', ''], ['1', '2,5', 'x', 'y']];
   assert.deepEqual(D.parseCsv(D.toCsv(rows)), rows);

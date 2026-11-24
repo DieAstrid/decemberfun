@@ -135,24 +135,45 @@ test('areaProgress and overallProgress sum session amounts', () => {
 });
 
 test('overall apartment distribution counts each apartment once across areas and skip changes', () => {
-  assert.deepEqual(M.overallApartmentStats(M.emptyState()), { total: 0, open: 0, done: 0, skipped: 0 });
+  assert.deepEqual(M.overallApartmentStats(M.emptyState()), { total: 0, open: 0, revisit: 0, done: 0, skipped: 0 });
   let { s, area, entrance } = setup();
   let session;
   ({ state: s, session } = M.startSession(s, area.id));
   s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: entrance.apartments[0].id, opened: true, moneyReceived: true, amount: 5 });
   s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: entrance.apartments[1].id, opened: false });
   s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: entrance.apartments[2].id, opened: true, moneyReceived: false, reason: M.REASONS.NO_CASH });
-  assert.deepEqual(M.overallApartmentStats(s), { total: 6, open: 4, done: 2, skipped: 0 });
+  assert.deepEqual(M.overallApartmentStats(s), { total: 6, open: 3, revisit: 1, done: 2, skipped: 0 });
   s = M.updateApartmentSkip(s, area.id, entrance.id, entrance.apartments[2].id, true, '');
-  assert.deepEqual(M.overallApartmentStats(s), { total: 6, open: 4, done: 1, skipped: 1 });
+  assert.deepEqual(M.overallApartmentStats(s), { total: 6, open: 3, revisit: 1, done: 1, skipped: 1 });
   let other, second;
   ({ state: s, area: other } = M.addArea(s, { name: 'Süd' }));
   ({ state: s, entrance: second } = M.addEntrance(s, other.id, { name: 'Anderes Haus', floors: 1, apartmentsPerFloor: 2 }));
   s = M.updateApartmentSkip(s, other.id, second.id, second.apartments[0].id, true, '');
-  assert.deepEqual(M.overallApartmentStats(s), { total: 8, open: 5, done: 1, skipped: 2 });
+  assert.deepEqual(M.overallApartmentStats(s), { total: 8, open: 4, revisit: 1, done: 1, skipped: 2 });
   s = M.updateApartmentSkip(s, area.id, entrance.id, entrance.apartments[2].id, false, '');
-  assert.deepEqual(M.overallApartmentStats(s), { total: 8, open: 5, done: 2, skipped: 1 });
+  assert.deepEqual(M.overallApartmentStats(s), { total: 8, open: 4, revisit: 1, done: 2, skipped: 1 });
   for (const apt of second.apartments) s = M.updateApartmentSkip(s, other.id, second.id, apt.id, true, '');
   const onlySkipped = { ...s, areas: [M.findArea(s, other.id)], sessions: [] };
-  assert.deepEqual(M.overallApartmentStats(onlySkipped), { total: 2, open: 0, done: 0, skipped: 2 });
+  assert.deepEqual(M.overallApartmentStats(onlySkipped), { total: 2, open: 0, revisit: 0, done: 0, skipped: 2 });
+});
+
+test('overall distribution separates unvisited from repeated unanswered visits and preserves final status', () => {
+  let { s, area, entrance } = setup();
+  let first, second;
+  ({ state: s, session: first } = M.startSession(s, area.id, new Date('2026-01-01T10:00:00Z')));
+  const visit = (session, index, opened) => {
+    s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: entrance.apartments[index].id, opened, ...(opened ? { moneyReceived: true, amount: 1 } : {}) });
+  };
+  visit(first, 0, false);
+  visit(first, 1, true);
+  visit(first, 2, false);
+  s = M.endSession(s, first.id, new Date('2026-01-01T11:00:00Z'));
+  ({ state: s, session: second } = M.startSession(s, area.id, new Date('2026-01-02T10:00:00Z')));
+  visit(second, 0, false);
+  visit(second, 1, false);
+  visit(second, 2, true);
+  s = M.updateApartmentSkip(s, area.id, entrance.id, entrance.apartments[0].id, true, '');
+  assert.deepEqual(M.overallApartmentStats(s), { total: 6, open: 3, revisit: 0, done: 2, skipped: 1 });
+  s = M.updateApartmentSkip(s, area.id, entrance.id, entrance.apartments[0].id, false, '');
+  assert.deepEqual(M.overallApartmentStats(s), { total: 6, open: 3, revisit: 1, done: 2, skipped: 0 });
 });

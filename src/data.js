@@ -4,6 +4,7 @@ import {
   REASON_LABELS,
   addArea,
   addEntrance,
+  apartmentNumber,
   emptyState,
   findArea,
   floorLabel,
@@ -54,6 +55,10 @@ export function normalizeState(raw) {
         if (saved && 'note' in saved) {
           assert(isStr(saved.note), `Wohnung ${apt.id}: ungültige Notiz`);
           apt.note = saved.note;
+        }
+        if (saved && 'customNumber' in saved) {
+          assert(isStr(saved.customNumber), `Wohnung ${apt.id}: ungültige Wohnungsnummer`);
+          apt.customNumber = saved.customNumber.trim();
         }
         if (saved && 'alwaysSkip' in saved) {
           assert(typeof saved.alwaysSkip === 'boolean', `Wohnung ${apt.id}: ungültige Überspringen-Einstellung`);
@@ -201,7 +206,7 @@ export function exportVisitsCsv(state) {
         ent?.name ?? '',
         ent?.address ?? '',
         apt ? floorLabel(apt.floor) : '',
-        apt ? apt.index : '',
+        apt ? apartmentNumber(apt) : '',
         s.startedAt,
         s.endedAt ?? '',
         v.at,
@@ -222,7 +227,7 @@ export function exportApartmentsCsv(state) {
   for (const area of state.areas) {
     for (const entrance of area.entrances) {
       for (const apt of entrance.apartments) {
-        rows.push([area.name, entrance.name, entrance.address, floorLabel(apt.floor), apt.index, apt.note ?? '']);
+        rows.push([area.name, entrance.name, entrance.address, floorLabel(apt.floor), apartmentNumber(apt), apt.note ?? '']);
       }
     }
   }
@@ -231,7 +236,7 @@ export function exportApartmentsCsv(state) {
 
 /** One row per collection session. */
 export function exportSessionsCsv(state) {
-  const rows = [['Gebiet', 'Start', 'Ende', 'Dauer (min)', 'Besucht', 'Geöffnet', 'Spenden', 'Kein Bargeld', 'Kein Wille', 'Ist-Betrag', 'Notiz']];
+  const rows = [['Gebiet', 'Start', 'Ende', 'Dauer (min)', 'Besucht', 'Geöffnet', 'Spenden', 'Kein Bargeld', 'Kein Wille', 'Ist-Betrag', 'Notiz', 'Komme wieder']];
   for (const s of state.sessions) {
     const st = sessionStats(s);
     rows.push([
@@ -246,6 +251,7 @@ export function exportSessionsCsv(state) {
       st.noWill,
       fmtNum(sessionAmount(s)),
       s.note,
+      st.comeBack,
     ]);
   }
   return toCsv(rows);

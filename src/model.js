@@ -6,11 +6,13 @@ export const SCHEMA_VERSION = 1;
 export const REASONS = Object.freeze({
   NO_CASH: 'no-cash',
   NO_WILL: 'no-will',
+  COME_BACK: 'come-back',
 });
 
 export const REASON_LABELS = Object.freeze({
   [REASONS.NO_CASH]: 'Kein Bargeld',
   [REASONS.NO_WILL]: 'Kein Wille',
+  [REASONS.COME_BACK]: 'Komme wieder',
 });
 
 export function createId(prefix = 'id') {
@@ -79,6 +81,10 @@ export function floorLabel(floor) {
 
 export function apartmentId(entranceId, floor, index) {
   return `${entranceId}:${floor}:${index}`;
+}
+
+export function apartmentNumber(apt) {
+  return apt.customNumber || String(apt.index);
 }
 
 /**
@@ -215,6 +221,7 @@ export function updateEntrance(state, areaId, entranceId, input) {
     return {
       ...apt,
       ...('note' in previous ? { note: previous.note } : {}),
+      ...('customNumber' in previous ? { customNumber: previous.customNumber } : {}),
       ...('alwaysSkip' in previous ? { alwaysSkip: previous.alwaysSkip } : {}),
       ...('skipReason' in previous ? { skipReason: previous.skipReason } : {}),
     };
@@ -256,6 +263,22 @@ export function updateApartmentNote(state, areaId, entranceId, aptId, note) {
       entrances: area.entrances.map((e) => e.id !== entranceId ? e : {
         ...e,
         apartments: e.apartments.map((apt) => apt.id === aptId ? { ...apt, note: String(note ?? '').trim() } : apt),
+      }),
+    }),
+  };
+}
+
+export function updateApartmentNumber(state, areaId, entranceId, aptId, number) {
+  const entrance = findEntrance(state, areaId, entranceId);
+  if (!entrance?.apartments.some((apt) => apt.id === aptId)) throw new Error('Wohnung nicht gefunden.');
+  if (typeof number !== 'string') throw new Error('Ungültige Wohnungsnummer.');
+  return {
+    ...state,
+    areas: state.areas.map((area) => area.id !== areaId ? area : {
+      ...area,
+      entrances: area.entrances.map((e) => e.id !== entranceId ? e : {
+        ...e,
+        apartments: e.apartments.map((apt) => apt.id === aptId ? { ...apt, customNumber: number.trim() } : apt),
       }),
     }),
   };
@@ -306,8 +329,8 @@ export function validateVisit({ opened, moneyReceived, amount, reason }) {
   if (moneyReceived) {
     return { opened: true, moneyReceived: true, amount: parseAmount(amount), reason: null };
   }
-  if (reason !== REASONS.NO_CASH && reason !== REASONS.NO_WILL) {
-    throw new Error('Bitte einen Grund wählen: kein Bargeld oder kein Wille.');
+  if (!Object.values(REASONS).includes(reason)) {
+    throw new Error('Bitte einen gültigen Grund wählen.');
   }
   return { opened: true, moneyReceived: false, amount: null, reason };
 }
@@ -384,11 +407,19 @@ function replaceSession(state, sessionId, patch) {
 // ---------- Apartment status across sessions ----------
 
 /**
- * An apartment counts as "abgearbeitet" (done) once someone opened.
- * It remains accessible for another visit with the show-done toggle.
+ * A visit is final when someone opened, except when another visit is requested.
  */
 export function isVisitFinal(visit) {
-  return Boolean(visit?.opened);
+  return Boolean(visit?.opened && visit.reason !== REASONS.COME_BACK);
+}
+
+function historyIsDone(history) {
+  return [...history]
+    .sort((a, b) => new Date(a.at ?? a.sessionStartedAt) - new Date(b.at ?? b.sessionStartedAt))
+    .reduce((done, visit) => {
+      if (visit.opened && visit.reason === REASONS.COME_BACK) return false;
+      return isVisitFinal(visit) || done;
+    }, false);
 }
 
 export function sessionsOfArea(state, areaId) {
@@ -411,9 +442,9 @@ export function apartmentHistory(state, areaId, aptId) {
 /**
  * Status of an apartment from the perspective of `sessionId` (or overall when omitted):
  * - current: visit recorded in this session (if any)
- * - doneBefore: a final visit exists in another session
+ * - doneBefore: the other sessions leave the apartment completed
  * - lastVisit: most recent visit in any other session
- * - done: a final visit exists in any session
+ * - done: the visit history leaves the apartment completed
  */
 export function apartmentStatus(state, areaId, aptId, sessionId = null) {
   const history = apartmentHistory(state, areaId, aptId);
@@ -421,10 +452,10 @@ export function apartmentStatus(state, areaId, aptId, sessionId = null) {
   const others = history.filter((v) => v.sessionId !== sessionId);
   return {
     current,
-    doneBefore: others.some(isVisitFinal),
+    doneBefore: historyIsDone(others),
     lastVisit: others[others.length - 1] || null,
     visits: history.length,
-    done: history.some(isVisitFinal),
+    done: historyIsDone(history),
   };
 }
 
@@ -468,14 +499,20 @@ export function entranceCollectionStats(state, areaId, entranceId) {
 }
 
 export function overallApartmentStats(state) {
-  const total = { total: 0, open: 0, done: 0, skipped: 0 };
+  const total = { total: 0, open: 0, revisit: 0, done: 0, skipped: 0 };
   for (const area of state.areas) {
     for (const entrance of area.entrances) {
-      const stats = entranceCollectionStats(state, area.id, entrance.id);
-      total.total += stats.total;
-      total.open += stats.open;
-      total.skipped += stats.skipped;
-      total.done += stats.total - stats.open - stats.skipped;
+      for (const apt of entrance.apartments) {
+        total.total++;
+        if (apt.alwaysSkip) {
+          total.skipped++;
+        } else {
+          const status = apartmentStatus(state, area.id, apt.id);
+          if (status.done) total.done++;
+          else if (status.visits) total.revisit++;
+          else total.open++;
+        }
+      }
     }
   }
   return total;
@@ -503,6 +540,7 @@ export function sessionStats(session) {
     donations: v.filter((x) => x.moneyReceived).length,
     noCash: v.filter((x) => x.reason === REASONS.NO_CASH).length,
     noWill: v.filter((x) => x.reason === REASONS.NO_WILL).length,
+    comeBack: v.filter((x) => x.reason === REASONS.COME_BACK).length,
     amount: sessionAmount(session),
     durationMinutes: session.endedAt
       ? Math.max(0, Math.round((new Date(session.endedAt) - new Date(session.startedAt)) / 60000))

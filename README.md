@@ -44,13 +44,18 @@ keine Laufzeit-Abhängigkeiten**. Alle Daten bleiben auf dem Gerät.
   manuellen Ist-Betrag, falls vorhanden, sonst die Einzelbeträge. Für geöffnet/nicht geöffnet zählt
   pro Wohnung nur der zuletzt erfasste Besuchsstatus; einzelne Sammelgänge werden nicht angezeigt.
 - **Wiederholte Besuche**: Eine Wohnung gilt als *abgearbeitet*, sobald geöffnet wurde,
-  auch bei „kein Bargeld“. Abgearbeitete Wohnungen werden im aktuellen und in späteren
-  Sammelgängen ausgeblendet und lassen sich für weitere Besuche per Schalter einblenden.
+  auch bei „kein Bargeld“. „Komme wieder“ markiert sie erneut als offen, bis ein späterer
+  Besuch sie abschließt. Abgearbeitete Wohnungen werden im aktuellen
+  und in späteren Sammelgängen standardmäßig angezeigt und lassen sich per Schalter ausblenden.
+  Bereits gespeicherte Schalterstellungen bleiben erhalten. Stockwerke lassen sich einzeln ein-
+  und ausklappen. Wohnungsnummern können individuell geändert werden; ein leeres Feld stellt
+  die ursprüngliche Nummer wieder her.
   „Nicht geöffnet“ bleibt offen; das letzte Ergebnis wird als Hinweis angezeigt.
 - **Gamification**: Ziel- und Vorjahresbetrag pro Gebiet (ohne Ziel zählt der Vorjahresbetrag).
   Ist-Betrag je Sammelgang = manuell erfasster Betrag oder automatisch die Summe der Einzelbeträge.
   Fortschritt in Prozent, Restbetrag, Überschuss und Erfolgszustand („Ziel erreicht“). Die Übersicht
-  zeigt außerdem die Verteilung aller Wohnungen auf offen, erledigt und dauerhaft übersprungen;
+  zeigt außerdem die Verteilung aller Wohnungen auf offen (noch kein Besuch), nochmal besuchen
+  (nicht geöffnet oder „Komme wieder“ und noch nicht erledigt), erledigt und dauerhaft übersprungen;
   übersprungene Wohnungen zählen dabei nicht gleichzeitig als erledigt.
 - **Übersichten**: Gebiete, Eingang (Wohnungen je Etage mit Status), Sammelgang, Wohnungshistorie,
   Gesamthistorie.
