@@ -79,8 +79,12 @@ small, .hint, .small-text { color: var(--muted); font-size: .85rem; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
 .btn-row input { flex: 1; min-width: 120px; }
 .form label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 10px; }
+.form label.toggle { display: flex; }
+.form [data-skip-reason][hidden] { display: none; }
+.entrance-controls select { display: block; width: 100%; min-height: 44px; margin-top: 4px; padding: 8px 40px 8px 10px; font: inherit; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: right 17px center, right 12px center; background-size: 5px 5px; background-repeat: no-repeat; }
 .access-form { display: grid; gap: 10px; }
-.access-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.access-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 0 15px; }
+.access-links > :last-child { margin-left: auto; }
 .recovery-code { padding: 12px; border: 1px dashed var(--border); border-radius: 10px; font: 700 1.15rem/1.4 ui-monospace, monospace; text-align: center; overflow-wrap: anywhere; user-select: all; }
 input, textarea {
   display: block; width: 100%; margin-top: 4px; min-height: 44px; padding: 8px 10px; font: inherit;
@@ -113,6 +117,8 @@ input, textarea {
 .session-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-top: 6px; }
 .apt.done { opacity: .7; }
 .apt.recorded { border-left: 4px solid var(--primary); }
+.apt-summary { min-width: 0; }
+.apt-note { display: block; overflow-wrap: anywhere; }
 .apt .prev { display: block; margin-top: 4px; }
 .apt .q { margin: 8px 0 0; font-weight: 600; }
 .apartment-note { margin-top: 12px; }
@@ -129,9 +135,10 @@ input, textarea {
   height: calc(var(--nav-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
   background: var(--card); border-top: 1px solid var(--border); z-index: 10;
 }
-.bottom-nav a { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: .75rem; color: var(--muted); }
+.bottom-nav a, .bottom-nav button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: .75rem; color: var(--muted); }
+.bottom-nav button { padding: 0; border: 0; background: transparent; font-family: inherit; line-height: 1.1; text-align: center; cursor: pointer; }
 .bottom-nav[hidden] { display: none; }
-.bottom-nav a span { font-size: 1.3rem; }
+.bottom-nav a span, .bottom-nav button span { font-size: 1.3rem; }
 .bottom-nav a.active { color: var(--primary-text); font-weight: 700; }
 .toast {
   position: fixed; left: 50%; bottom: calc(var(--nav-h) + 20px); transform: translate(-50%, 20px); opacity: 0;

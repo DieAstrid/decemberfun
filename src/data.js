@@ -55,6 +55,14 @@ export function normalizeState(raw) {
           assert(isStr(saved.note), `Wohnung ${apt.id}: ungültige Notiz`);
           apt.note = saved.note;
         }
+        if (saved && 'alwaysSkip' in saved) {
+          assert(typeof saved.alwaysSkip === 'boolean', `Wohnung ${apt.id}: ungültige Überspringen-Einstellung`);
+          apt.alwaysSkip = saved.alwaysSkip;
+        }
+        if (saved && 'skipReason' in saved) {
+          assert(isStr(saved.skipReason), `Wohnung ${apt.id}: ungültiger Überspringen-Grund`);
+          apt.skipReason = saved.skipReason;
+        }
         assert(!aptIndex.has(apt.id), `doppelte Wohnung ${apt.id}`);
         aptIndex.set(apt.id, { areaId: a.id, entranceId: e.id });
       }

@@ -18,6 +18,14 @@ keine Laufzeit-Abhängigkeiten**. Alle Daten bleiben auf dem Gerät.
 - **Wohnungsnotizen**: Pro Wohnung separat speichern; bleiben bei späteren Sammelgängen und
   Änderungen bestehender Eingänge erhalten. Enthalten in JSON-Sicherungen und im CSV-Export
   der Besuche sowie „Wohnungen & Notizen“ (auch ohne Besuch).
+- **Wohnungen überspringen**: „Immer überspringen“ mit optionalem Grund pro Wohnung speichern.
+  Sie wird in laufenden und zukünftigen Sammelgängen nicht angeboten; bestehende Besuche bleiben
+  in der Historie erhalten. In der Wohnungsverwaltung kann sie wieder aktiviert werden. Die
+  Einstellung und der Grund sind Teil der JSON-Sicherung.
+- **Eingänge sortieren**: In der Gebietsansicht nach offenen Wohnungen oder Namen (A–Z, numerisch)
+  sortieren und vollständig erledigte Eingänge ausblenden. Dauerhaft übersprungene Wohnungen
+  zählen nicht als offen; bereits erledigte Wohnungen bleiben auch nach dem Überspringen als
+  erledigt gezählt.
 - **Optische Code-Abfrage**: Beim Laden der Seite mit `04122026` bestätigen.
   Kein Zugriffsschutz und keine Verschlüsselung; der Code ist im öffentlichen Quelltext sichtbar.
 - **Lokale Rollen**: Über „Admin Access“ kann mit dem Zugangscode der Startseite ein lokaler

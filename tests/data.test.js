@@ -67,6 +67,22 @@ test('legacy backups without apartment notes remain unchanged', () => {
   assert.throws(() => D.importJson(D.exportJson(s)), /ungültige Notiz/);
 });
 
+test('skip settings survive JSON backups and entrance edits; older apartments remain active', () => {
+  let { s, area, entrance } = sample();
+  const aptId = entrance.apartments[0].id;
+  assert.equal(D.importJson(D.exportJson(s)).areas[0].entrances[0].apartments[0].alwaysSkip, undefined);
+  s = M.updateApartmentSkip(s, area.id, entrance.id, aptId, true, 'Kein Interesse; <Hinweis>');
+  s = D.importJson(D.exportJson(s));
+  s = M.updateEntrance(s, area.id, entrance.id, { floors: 3, apartmentsPerFloor: 2 });
+  const apt = M.findEntrance(s, area.id, entrance.id).apartments.find((item) => item.id === aptId);
+  assert.equal(apt.alwaysSkip, true);
+  assert.equal(apt.skipReason, 'Kein Interesse; <Hinweis>');
+  assert.equal(s.sessions[0].visits.length, 2);
+  const invalid = structuredClone(s);
+  invalid.areas[0].entrances[0].apartments[0].alwaysSkip = 'true';
+  assert.throws(() => D.importJson(D.exportJson(invalid)), /ungültige Überspringen-Einstellung/);
+});
+
 test('CSV escaping and parsing round-trip', () => {
   const rows = [['a;b', 'say "hi"', 'line\nbreak', ''], ['1', '2,5', 'x', 'y']];
   assert.deepEqual(D.parseCsv(D.toCsv(rows)), rows);

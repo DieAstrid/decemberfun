@@ -114,6 +114,27 @@ test('repeated visits: done apartments are hidden in later sessions and can be s
   assert.equal(M.areaProgress(s, area.id).collected, 15);
 });
 
+test('permanently skipped apartments stay out of new sessions without changing historical visits', () => {
+  let { s, area, entrance, apt } = setup();
+  let first;
+  ({ state: s, session: first } = M.startSession(s, area.id, new Date('2026-11-01T10:00:00Z')));
+  s = M.recordVisit(s, first.id, { entranceId: entrance.id, apartmentId: apt(0, 1), opened: false });
+  s = M.endSession(s, first.id, new Date('2026-11-01T11:00:00Z'));
+  s = M.updateApartmentSkip(s, area.id, entrance.id, apt(0, 1), true, ' Kein Interesse ');
+  assert.equal(M.apartmentHistory(s, area.id, apt(0, 1)).length, 1);
+  assert.equal(M.apartmentsForSession(s, first.id, entrance.id, { showDone: true }).some((a) => a.id === apt(0, 1)), true);
+  let second;
+  ({ state: s, session: second } = M.startSession(s, area.id, new Date('2026-11-08T10:00:00Z')));
+  assert.equal(M.apartmentsForSession(s, second.id, entrance.id, { showDone: true }).some((a) => a.id === apt(0, 1)), false);
+  assert.equal(M.sessionStats(M.findSession(s, second.id)).visited, 0);
+  assert.throws(() => M.recordVisit(s, second.id, { entranceId: entrance.id, apartmentId: apt(0, 1), opened: false }), /übersprungen/);
+  s = M.updateApartmentSkip(s, area.id, entrance.id, apt(0, 1), false, 'Kein Interesse');
+  assert.equal(M.apartmentsForSession(s, second.id, entrance.id).some((a) => a.id === apt(0, 1)), true);
+  s = M.recordVisit(s, second.id, { entranceId: entrance.id, apartmentId: apt(0, 1), opened: false });
+  assert.equal(M.sessionStats(M.findSession(s, second.id)).notOpened, 1);
+  assert.equal(M.apartmentHistory(s, area.id, apt(0, 1)).length, 2);
+});
+
 test('isVisitFinal rules', () => {
   assert.equal(M.isVisitFinal({ opened: false }), false);
   assert.equal(M.isVisitFinal({ opened: true, moneyReceived: true }), true);

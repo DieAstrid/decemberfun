@@ -112,6 +112,15 @@ test('admin setup, assignments and user entrance management remain local and hid
   assert.match(main.innerHTML, /Gesamtsammelsumme<\/span><strong>12,50/);
   assert.match(main.innerHTML, /Durchschnitt je besuchter Wohnung<\/span><strong>12,50/);
   assert.doesNotMatch(main.innerHTML, /href="#\/session\/|Notiz bleibt lokal|Sammelgang starten/);
+  navigate(`#/area/${area.id}/entrance/${entrance.id}`);
+  assert.match(main.innerHTML, /Whg. 1/);
+  navigate(`#/area/${area.id}/entrance/${entrance.id}/apt/${encodeURIComponent(entrance.apartments[0].id)}`);
+  assert.match(main.innerHTML, /Immer überspringen/);
+  assert.doesNotMatch(main.innerHTML, /Historie|Notiz bleibt lokal|Sammelgang/);
+  await submit({ form: 'apartment-skip', area: area.id, entrance: entrance.id, apt: entrance.apartments[0].id }, { alwaysSkip: 'on', skipReason: 'Kein Interesse' });
+  assert.match(main.innerHTML, /checked/);
+  navigate(`#/area/${area.id}/entrance/${entrance.id}`);
+  assert.match(main.innerHTML, /Wird übersprungen/);
 
   await import('../src/app.js?admin-reload');
   await settle();
@@ -158,6 +167,7 @@ test('admin setup, assignments and user entrance management remain local and hid
   await click({ action: 'open-user' });
   await submit({ form: 'user-login' }, { email: 'TEAM@EXAMPLE.ORG' });
   assert.match(main.innerHTML, /Teamgebiet/);
+  assert.match(nav.innerHTML, /data-action="open-admin"[^>]*><span>⚙<\/span>Admin Access<\/button>/);
   assert.doesNotMatch(main.innerHTML, /Anderes Gebiet|Sammelgang|Betrag|Notiz bleibt lokal/);
   navigate(`#/area/${unassignedArea.id}`);
   assert.match(main.innerHTML, /Nicht gefunden/);
@@ -167,6 +177,10 @@ test('admin setup, assignments and user entrance management remain local and hid
   navigate(`#/area/${area.id}/entrance/${entrance.id}`);
   assert.match(main.innerHTML, /Eingang bearbeiten/);
   assert.doesNotMatch(main.innerHTML, /Sammelgang|Notiz bleibt lokal|12,50/);
+  navigate(`#/area/${area.id}/entrance/${entrance.id}/apt/${encodeURIComponent(entrance.apartments[0].id)}`);
+  assert.match(main.innerHTML, /Kein Interesse/);
+  await submit({ form: 'apartment-skip', area: area.id, entrance: entrance.id, apt: entrance.apartments[0].id }, { skipReason: 'Kein Interesse' });
+  assert.doesNotMatch(main.innerHTML, /name="alwaysSkip"[^>]*checked/);
   navigate('#/history');
   assert.match(main.innerHTML, /Nicht gefunden/);
 
@@ -184,8 +198,8 @@ test('admin setup, assignments and user entrance management remain local and hid
   assert.equal(persisted.areas[0].entrances[0].apartments[0].note, 'Notiz bleibt lokal');
   assert.deepEqual(persisted.areas[0].assignedEmails, ['team@example.org', 'zweites@example.org']);
 
-  await click({ action: 'logout' });
   await click({ action: 'open-admin' });
+  assert.equal(nav.hidden, true);
   assert.match(main.innerHTML, /nicht den Zugangscode der Startseite/);
   assert.match(main.innerHTML, /data-form="admin-reinitialize"/);
   const previousConfig = saved.get('sammelgebiet-admin');

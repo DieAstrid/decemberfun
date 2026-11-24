@@ -211,7 +211,13 @@ export function updateEntrance(state, areaId, entranceId, input) {
   const previousApartments = new Map(existing.apartments.map((apt) => [apt.id, apt]));
   entrance.apartments = entrance.apartments.map((apt) => {
     const previous = previousApartments.get(apt.id);
-    return previous && 'note' in previous ? { ...apt, note: previous.note } : apt;
+    if (!previous) return apt;
+    return {
+      ...apt,
+      ...('note' in previous ? { note: previous.note } : {}),
+      ...('alwaysSkip' in previous ? { alwaysSkip: previous.alwaysSkip } : {}),
+      ...('skipReason' in previous ? { skipReason: previous.skipReason } : {}),
+    };
   });
   const validIds = new Set(entrance.apartments.map((a) => a.id));
   return {
@@ -250,6 +256,22 @@ export function updateApartmentNote(state, areaId, entranceId, aptId, note) {
       entrances: area.entrances.map((e) => e.id !== entranceId ? e : {
         ...e,
         apartments: e.apartments.map((apt) => apt.id === aptId ? { ...apt, note: String(note ?? '').trim() } : apt),
+      }),
+    }),
+  };
+}
+
+export function updateApartmentSkip(state, areaId, entranceId, aptId, alwaysSkip, reason) {
+  const entrance = findEntrance(state, areaId, entranceId);
+  if (!entrance?.apartments.some((apt) => apt.id === aptId)) throw new Error('Wohnung nicht gefunden.');
+  if (typeof alwaysSkip !== 'boolean' || typeof reason !== 'string') throw new Error('Ungültige Überspringen-Einstellung.');
+  return {
+    ...state,
+    areas: state.areas.map((area) => area.id !== areaId ? area : {
+      ...area,
+      entrances: area.entrances.map((e) => e.id !== entranceId ? e : {
+        ...e,
+        apartments: e.apartments.map((apt) => apt.id === aptId ? { ...apt, alwaysSkip, skipReason: reason.trim() } : apt),
       }),
     }),
   };
@@ -296,7 +318,9 @@ export function recordVisit(state, sessionId, { entranceId, apartmentId: aptId, 
   if (!session) throw new Error('Sammelgang nicht gefunden.');
   if (session.endedAt) throw new Error('Der Sammelgang ist bereits beendet.');
   const entrance = findEntrance(state, session.areaId, entranceId);
-  if (!entrance || !entrance.apartments.some((a) => a.id === aptId)) throw new Error('Wohnung nicht gefunden.');
+  const apartment = entrance?.apartments.find((a) => a.id === aptId);
+  if (!apartment) throw new Error('Wohnung nicht gefunden.');
+  if (apartment.alwaysSkip) throw new Error('Diese Wohnung wird immer übersprungen.');
   const visit = { entranceId, apartmentId: aptId, ...validateVisit(result), at: now.toISOString() };
   return replaceSession(state, sessionId, {
     visits: [...session.visits.filter((v) => v.apartmentId !== aptId), visit],
@@ -404,7 +428,7 @@ export function apartmentStatus(state, areaId, aptId, sessionId = null) {
   };
 }
 
-/** Apartments of an entrance for a session, hiding all completed apartments unless `showDone`. */
+/** Apartments of an entrance for a session, hiding skipped and completed apartments by default. */
 export function apartmentsForSession(state, sessionId, entranceId, { showDone = false } = {}) {
   const session = findSession(state, sessionId);
   if (!session) throw new Error('Sammelgang nicht gefunden.');
@@ -412,7 +436,7 @@ export function apartmentsForSession(state, sessionId, entranceId, { showDone = 
   if (!entrance) throw new Error('Eingang nicht gefunden.');
   return entrance.apartments
     .map((apt) => ({ ...apt, status: apartmentStatus(state, session.areaId, apt.id, sessionId) }))
-    .filter((apt) => showDone || !apt.status.done);
+    .filter((apt) => (!apt.alwaysSkip || (session.endedAt && apt.status.current)) && (showDone || !apt.status.done));
 }
 
 export function entranceStats(state, areaId, entranceId) {
@@ -426,6 +450,21 @@ export function entranceStats(state, areaId, entranceId) {
     if (st.visits > 0) visited++;
   }
   return { total: entrance.apartments.length, done, open: entrance.apartments.length - done, visited };
+}
+
+export function entranceCollectionStats(state, areaId, entranceId) {
+  const entrance = findEntrance(state, areaId, entranceId);
+  if (!entrance) throw new Error('Eingang nicht gefunden.');
+  let done = 0;
+  let skipped = 0;
+  let open = 0;
+  for (const apt of entrance.apartments) {
+    const isDone = apartmentStatus(state, areaId, apt.id).done;
+    if (isDone) done++;
+    if (apt.alwaysSkip) skipped++;
+    else if (!isDone) open++;
+  }
+  return { total: entrance.apartments.length, done, skipped, open };
 }
 
 // ---------- Amounts & gamification ----------

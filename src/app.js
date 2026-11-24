@@ -33,6 +33,8 @@ let recoveryCodeToShow = '';
 let userEmail = '';
 const drafts = new Map(); // apartmentId -> partial visit being entered
 let showDone = localStorage.getItem('showDone') === '1';
+let entranceSort = ['name-asc', 'name-desc'].includes(localStorage.getItem('entranceSort')) ? 'name-asc' : 'open';
+let hideCompletedEntrances = localStorage.getItem('hideCompletedEntrances') === '1';
 const ADMIN_KEY = 'sammelgebiet-admin';
 const ACCESS_CODE = '04122026';
 
@@ -214,7 +216,7 @@ function viewAdminArea(areaId) {
     <div class="row between"><h2>Eingänge</h2><a class="btn small" href="#/area/${encodeURIComponent(area.id)}/entrance/new">＋ Eingang</a></div>
     ${area.entrances.length ? '' : '<p class="empty">Noch keine Eingänge angelegt.</p>'}
     <div class="list">${area.entrances.map((entrance) => `<div class="card row between">
-      <span class="grow"><strong>${esc(entrance.name)}</strong><br><small>${esc(entrance.address)}${entrance.address ? ' · ' : ''}${entrance.floors} Etagen · ${entrance.apartments.length} Wohnungen</small></span>
+      <a class="grow" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}"><strong>${esc(entrance.name)}</strong><br><small>${esc(entrance.address)}${entrance.address ? ' · ' : ''}${entrance.floors} Etagen · ${entrance.apartments.length} Wohnungen</small></a>
       <a class="btn small ghost" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/edit" aria-label="Bearbeiten">✎</a>
     </div>`).join('')}</div>
   </section>
@@ -239,16 +241,27 @@ function viewUserArea(areaId) {
   </section>`;
 }
 
-function viewUserEntrance(areaId, entranceId) {
-  const area = assignedAreas(userEmail).find((item) => item.id === areaId);
+function viewManagedEntrance(areaId, entranceId) {
+  const area = M.findArea(state, areaId);
   const entrance = area?.entrances.find((item) => item.id === entranceId);
   if (!entrance) return notFound();
   return `
   ${header(entrance.name, `#/area/${encodeURIComponent(area.id)}`)}
   <p class="hint">${esc(area.name)}${entrance.address ? ` · ${esc(entrance.address)}` : ''}</p>
   <section class="card stats"><div><strong>${entrance.apartments.length}</strong><small>Wohnungen</small></div></section>
+  ${M.groupByFloor(entrance.apartments).reverse().map((floor) => `<section class="floor"><h3>${floor.label}</h3><div class="list">
+    ${floor.apartments.map((apt) => `<a class="card row between" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/apt/${encodeURIComponent(apt.id)}"><span>Whg. ${apt.index}</span>${apt.alwaysSkip ? '<span class="badge">Wird übersprungen</span>' : '<span>›</span>'}</a>`).join('')}
+  </div></section>`).join('')}
   <a class="btn block" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/edit">Eingang bearbeiten</a>
   <button class="btn danger block" data-action="delete-entrance" data-area="${esc(area.id)}" data-id="${esc(entrance.id)}">Eingang löschen</button>`;
+}
+
+function viewManagedApartment(areaId, entranceId, aptId) {
+  const entrance = M.findEntrance(state, areaId, entranceId);
+  const apt = entrance?.apartments.find((item) => item.id === aptId);
+  if (!apt) return notFound();
+  return `${header(`${entrance.name} · ${apt.label}`, `#/area/${encodeURIComponent(areaId)}/entrance/${encodeURIComponent(entranceId)}`)}
+    ${apartmentSkipForm(areaId, entranceId, apt)}`;
 }
 
 function viewAccess() {
@@ -337,6 +350,11 @@ function viewArea(areaId) {
   if (!a) return notFound();
   const running = M.activeSession(state, a.id);
   const sessions = M.sessionsOfArea(state, a.id).reverse();
+  const entrances = a.entrances.map((entrance) => ({ entrance, stats: M.entranceCollectionStats(state, a.id, entrance.id) }))
+    .filter(({ stats }) => !hideCompletedEntrances || stats.open > 0)
+    .sort((left, right) => entranceSort === 'name-asc'
+      ? left.entrance.name.localeCompare(right.entrance.name, 'de', { numeric: true, sensitivity: 'base' })
+      : right.stats.open - left.stats.open || left.entrance.name.localeCompare(right.entrance.name, 'de'));
   return `
   ${header(a.name, '#/')}
   ${a.note ? `<p class="hint">${esc(a.note)}</p>` : ''}
@@ -348,13 +366,22 @@ function viewArea(areaId) {
   <section>
     <div class="row between"><h2>Eingänge</h2><a class="btn small" href="#/area/${a.id}/entrance/new">＋ Eingang</a></div>
     ${a.entrances.length ? '' : '<p class="empty">Noch keine Eingänge angelegt.</p>'}
+    ${a.entrances.length ? `<div class="card form entrance-controls">
+      <label>Sortieren nach
+        <select data-action="entrance-sort">
+          <option value="open" ${entranceSort === 'open' ? 'selected' : ''}>Offene Wohnungen (meiste zuerst)</option>
+          <option value="name-asc" ${entranceSort === 'name-asc' ? 'selected' : ''}>Eingangsname (A–Z)</option>
+        </select>
+      </label>
+      <label class="toggle"><input type="checkbox" data-action="hide-completed-entrances" ${hideCompletedEntrances ? 'checked' : ''}>Erledigte Eingänge ausblenden</label>
+    </div>` : ''}
+    ${a.entrances.length && !entrances.length ? '<p class="empty">Alle Eingänge sind ausgeblendet.</p>' : ''}
     <div class="list">
-      ${a.entrances
-        .map((e) => {
-          const st = M.entranceStats(state, a.id, e.id);
+      ${entrances
+        .map(({ entrance: e, stats: st }) => {
           return `<div class="card row between">
             <a class="grow" href="#/area/${a.id}/entrance/${e.id}"><strong>${esc(e.name)}</strong><br>
-              <small>${esc(e.address)}${e.address ? ' · ' : ''}${e.floors} Etagen · ${st.total} Whg. · ${st.done} erledigt</small></a>
+              <small>${esc(e.address)}${e.address ? ' · ' : ''}${st.total} Whg. · ${st.done} erledigt · ${st.open} offen · ${st.skipped} übersprungen</small></a>
             <a class="btn small ghost" href="#/area/${a.id}/entrance/${e.id}/edit" aria-label="Bearbeiten">✎</a>
           </div>`;
         })
@@ -428,7 +455,7 @@ function viewEntrance(areaId, entranceId) {
   const st = M.entranceStats(state, a.id, e.id);
   return `
   ${header(e.name, `#/area/${a.id}`)}
-  <p class="hint">${esc(a.name)}${e.address ? ' · ' + esc(e.address) : ''}</p>
+  <p class="hint">Sammelgebiet: ${esc(a.name)}${e.address ? ' · ' + esc(e.address) : ''}</p>
   <section class="card stats">
     <div><strong>${st.total}</strong><small>Wohnungen</small></div>
     <div><strong>${st.done}</strong><small>erledigt</small></div>
@@ -436,15 +463,16 @@ function viewEntrance(areaId, entranceId) {
     <div><strong>${st.visited}</strong><small>besucht</small></div>
   </section>
   ${M.groupByFloor(e.apartments)
-    .reverse()
     .map(
       (f) => `<section class="floor"><h3>${f.label}</h3><div class="list">
       ${f.apartments
         .map((apt) => {
           const s = M.apartmentStatus(state, a.id, apt.id);
           const last = M.apartmentHistory(state, a.id, apt.id).pop();
+          const note = Array.from(apt.note ?? '');
+          const preview = note.length > 50 ? `${note.slice(0, 47).join('')}...` : note.join('');
           return `<a class="card row between apt ${s.done ? 'done' : ''}" href="#/area/${a.id}/entrance/${e.id}/apt/${encodeURIComponent(apt.id)}">
-            <span>Whg. ${apt.index}${s.done ? ' ✓' : ''}<br><small>${s.visits} Besuch(e)</small></span>${last ? visitBadge(last) : '<span class="badge">nie besucht</span>'}</a>`;
+            <span class="apt-summary">Whg. ${apt.index}${s.done ? ' ✓' : ''}<br><small>${s.visits} Besuch(e)</small>${note.length ? `<small class="apt-note" title="${esc(apt.note)}">${esc(preview)}</small>` : ''}</span>${apt.alwaysSkip ? '<span class="badge">Wird übersprungen</span>' : last ? visitBadge(last) : '<span class="badge">nie besucht</span>'}</a>`;
         })
         .join('')}
       </div></section>`,
@@ -461,13 +489,22 @@ function viewApartment(areaId, entranceId, aptId) {
   const st = M.apartmentStatus(state, areaId, apt.id);
   return `
   ${header(`${e.name} · ${apt.label}`, `#/area/${areaId}/entrance/${e.id}`)}
-  <p class="card">${st.done ? '✓ Abgearbeitet – wird in neuen Sammelgängen standardmäßig ausgeblendet.' : 'Noch offen – erscheint in neuen Sammelgängen.'}</p>
+  <p class="card">${apt.alwaysSkip ? 'Diese Wohnung wird in Sammelgängen übersprungen.' : st.done ? '✓ Abgearbeitet – wird in neuen Sammelgängen standardmäßig ausgeblendet.' : 'Noch offen – erscheint in neuen Sammelgängen.'}</p>
+  ${apartmentSkipForm(areaId, e.id, apt)}
   ${apartmentNoteForm(areaId, e.id, apt)}
   <h2>Historie</h2>
   ${history.length ? '' : '<p class="empty">Noch keine Besuche.</p>'}
   <div class="list">${history
     .map((v) => `<a class="card row between" href="#/session/${v.sessionId}"><span>${dt(v.at)}<br><small>Sammelgang ${dt(v.sessionStartedAt)}</small></span>${visitBadge(v)}</a>`)
     .join('')}</div>`;
+}
+
+function apartmentSkipForm(areaId, entranceId, apt) {
+  return `<form class="card form" data-form="apartment-skip" data-area="${esc(areaId)}" data-entrance="${esc(entranceId)}" data-apt="${esc(apt.id)}">
+    <label class="toggle"><input type="checkbox" name="alwaysSkip" data-action="toggle-skip-reason" ${apt.alwaysSkip ? 'checked' : ''}>Immer überspringen</label>
+    <label data-skip-reason ${apt.alwaysSkip ? '' : 'hidden'}>Grund (optional)<textarea name="skipReason" rows="2">${esc(apt.skipReason)}</textarea></label>
+    <button class="btn small">Einstellung speichern</button>
+  </form>`;
 }
 
 function apartmentNoteForm(areaId, entranceId, apt, readOnly = false) {
@@ -561,6 +598,7 @@ function aptRecorder(s, apt, entranceId) {
     ${prev ? `<small class="prev">Zuletzt (${dt(prev.at)}): ${visitBadge(prev)}</small>` : ''}
     ${controls}
     ${apartmentNoteForm(s.areaId, entranceId, apt, readOnly)}
+    ${readOnly ? '' : apartmentSkipForm(s.areaId, entranceId, apt)}
   </div>`;
 }
 
@@ -569,14 +607,16 @@ function viewSessionEntrance(sessionId, entranceId) {
   const e = s && M.findEntrance(state, s.areaId, entranceId);
   if (!e) return notFound();
   const apts = M.apartmentsForSession(state, s.id, e.id, { showDone });
-  const hidden = e.apartments.length - apts.length;
+  const skipped = e.apartments.filter((apt) => apt.alwaysSkip && !(s.endedAt && s.visits.some((v) => v.apartmentId === apt.id))).length;
+  const hidden = e.apartments.length - skipped - apts.length;
   const floors = M.groupByFloor(apts).reverse();
   return `
   ${header(e.name, `#/session/${s.id}`)}
   ${s.endedAt ? '<p class="card warn-box">Dieser Sammelgang ist beendet – nur Ansicht.</p>' : ''}
   <label class="toggle card"><input type="checkbox" data-action="toggle-done" ${showDone ? 'checked' : ''}>
     Bereits abgearbeitete Wohnungen anzeigen ${hidden ? `<small>(${hidden} ausgeblendet)</small>` : ''}</label>
-  ${apts.length ? '' : '<p class="empty">🎉 Alle Wohnungen dieses Eingangs sind bereits abgearbeitet.</p>'}
+  ${skipped ? `<p class="hint">${skipped} ${skipped === 1 ? 'Wohnung wird' : 'Wohnungen werden'} immer übersprungen. Die Einstellung ist in der Wohnungsverwaltung änderbar.</p>` : ''}
+  ${apts.length ? '' : '<p class="empty">Keine Wohnungen für diesen Sammelgang angezeigt.</p>'}
   ${floors
     .map((f) => `<section class="floor"><h3>${f.label}</h3><div class="list">${f.apartments.map((apt) => aptRecorder(s, apt, e.id)).join('')}</div></section>`)
     .join('')}
@@ -628,6 +668,8 @@ function route() {
       if (p2 === 'entrance') {
         if (p3 === 'new') return ['home', viewEntranceForm(p1, null)];
         if (p4 === 'edit') return ['home', viewEntranceForm(p1, p3)];
+        if (p4 === 'apt') return ['home', viewManagedApartment(p1, p3, p5)];
+        return ['home', viewManagedEntrance(p1, p3)];
       }
       return ['home', viewAdminArea(p1)];
     }
@@ -640,7 +682,8 @@ function route() {
       if (p2 === 'entrance') {
         if (p3 === 'new') return ['home', viewEntranceForm(p1, null)];
         if (p4 === 'edit') return ['home', viewEntranceForm(p1, p3)];
-        return ['home', viewUserEntrance(p1, p3)];
+        if (p4 === 'apt') return ['home', viewManagedApartment(p1, p3, p5)];
+        return ['home', viewManagedEntrance(p1, p3)];
       }
       return ['home', viewUserArea(p1)];
     }
@@ -678,6 +721,7 @@ function render() {
   $main.innerHTML = html;
   if (accessMode === 'admin' || accessMode === 'user') {
     $nav.innerHTML = `<a href="#/" class="active"><span>${accessMode === 'admin' ? '⚙' : '🏠'}</span>${accessMode === 'admin' ? 'Verwaltung' : 'Gebiete'}</a>
+      ${accessMode === 'user' ? '<button type="button" data-action="open-admin"><span>⚙</span>Admin Access</button>' : ''}
       <a href="#/" data-action="logout"><span>↩</span>Abmelden</a>`;
     const form = $main.querySelector('[data-form="entrance"]');
     if (form) updateEntrancePreview(form);
@@ -689,7 +733,8 @@ function render() {
     <a href="#/" class="${tab === 'home' ? 'active' : ''}"><span>🏠</span>Übersicht</a>
     ${running ? `<a href="#/session/${running.id}" class="${tab === 'session' ? 'active' : ''}"><span>▶</span>Gang</a>` : ''}
     <a href="#/history" class="${tab === 'history' ? 'active' : ''}"><span>📜</span>Historie</a>
-    <a href="#/data" class="${tab === 'data' ? 'active' : ''}"><span>💾</span>Daten</a>`;
+    <a href="#/data" class="${tab === 'data' ? 'active' : ''}"><span>💾</span>Daten</a>
+    <button type="button" data-action="open-admin"><span>⚙</span>Admin Access</button>`;
   const form = $main.querySelector('[data-form="entrance"]');
   if (form) updateEntrancePreview(form);
   $main.querySelector('[data-autofocus]')?.focus();
@@ -841,6 +886,27 @@ document.addEventListener('click', (ev) => {
 
 document.addEventListener('change', async (ev) => {
   const el = ev.target;
+  if (el.matches('[data-action="entrance-sort"]') || el.matches('[data-action="hide-completed-entrances"]')) {
+    try {
+      if (el.matches('[data-action="entrance-sort"]')) {
+        if (!['open', 'name-asc'].includes(el.value)) throw new Error('Ungültige Sortierung.');
+        localStorage.setItem('entranceSort', el.value);
+        entranceSort = el.value;
+      } else {
+        localStorage.setItem('hideCompletedEntrances', el.checked ? '1' : '0');
+        hideCompletedEntrances = el.checked;
+      }
+      render();
+    } catch (err) {
+      toast(`Einstellung konnte nicht gespeichert werden: ${err.message}`, 'error');
+      render();
+    }
+    return;
+  }
+  if (el.matches('[data-action="toggle-skip-reason"]')) {
+    el.closest('form').querySelector('[data-skip-reason]').hidden = !el.checked;
+    return;
+  }
   if (el.matches('[data-action="toggle-done"]')) {
     showDone = el.checked;
     localStorage.setItem('showDone', showDone ? '1' : '0');
@@ -999,6 +1065,15 @@ document.addEventListener('submit', async (ev) => {
     case 'apartment-note':
       if (accessMode !== 'legacy') return;
       act((st) => M.updateApartmentNote(st, form.dataset.area, form.dataset.entrance, form.dataset.apt, f.note), 'Notiz gespeichert');
+      break;
+    case 'apartment-skip':
+      if (!accessConfirmed || (accessMode === 'user' && !assignedAreas(userEmail).some((area) => area.id === form.dataset.area))) {
+        toast('Dieses Sammelgebiet ist nicht freigegeben.', 'error');
+        return;
+      }
+      if (act((st) => M.updateApartmentSkip(st, form.dataset.area, form.dataset.entrance, form.dataset.apt, f.alwaysSkip === 'on', f.skipReason), 'Einstellung gespeichert')) {
+        drafts.delete(form.dataset.apt);
+      }
       break;
     case 'area':
       if (accessMode === 'user') {
