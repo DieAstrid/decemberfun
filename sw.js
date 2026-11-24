@@ -1,6 +1,6 @@
 // Offline support: precache the app shell, serve cache-first, refresh in background.
 // Bump CACHE_VERSION whenever app files change so clients pick up the new version.
-const CACHE_VERSION = 'sammelgebiet-v17';
+const CACHE_VERSION = 'sammelgebiet-v18';
 const ASSETS = [
   './',
   './index.html',

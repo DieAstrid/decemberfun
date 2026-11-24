@@ -114,6 +114,14 @@ test('optical code gate, persisted status and apartment note interactions', asyn
   assert.equal(nav.hidden, false);
   assert.match(main.innerHTML, /Testhaus/);
   assert.match(nav.innerHTML, /data-action="open-admin"[^>]*><span>⚙<\/span>Admin Access<\/button>/);
+  navigate('#/');
+  assert.match(main.innerHTML, /Gesamtfortschritt/);
+  assert.match(main.innerHTML, /Wohnungen im Überblick/);
+  assert.match(main.innerHTML, /Offen: <strong>21<\/strong>/);
+  assert.match(main.innerHTML, /Erledigt: <strong>0<\/strong>/);
+  assert.match(main.innerHTML, /Übersprungen: <strong>3<\/strong>/);
+  assert.match(main.innerHTML, /apartment-chart-open" style="width:87\.5%"/);
+  navigate(`#/session/${session.id}/entrance/${entrance.id}`);
   await click({ action: 'open-admin' });
   assert.equal(nav.hidden, true);
   assert.match(main.innerHTML, /data-form="admin-setup"/);

@@ -94,7 +94,7 @@ function download(filename, content, type) {
 
 // ---------- shared components ----------
 
-function progressCard(p, title = 'Fortschritt') {
+function progressCard(p, title = 'Fortschritt', extra = '') {
   return `
   <section class="card progress-card level-${p.level}">
     <div class="row between"><h2>${esc(title)}</h2>${p.success ? '<span class="badge success">🏆 Erfolg</span>' : ''}</div>
@@ -107,6 +107,21 @@ function progressCard(p, title = 'Fortschritt') {
       <span>${p.success ? (p.surplus > 0 ? `+${money(p.surplus)} über Ziel` : 'Ziel genau erreicht') : `noch ${money(p.remaining)}`}</span>
     </div>
     <p class="level-msg">${esc(M.LEVEL_MESSAGES[p.level])}</p>
+    ${extra}
+  </section>`;
+}
+
+function apartmentOverview(stats) {
+  const categories = [
+    ['open', 'Offen', stats.open],
+    ['done', 'Erledigt', stats.done],
+    ['skipped', 'Übersprungen', stats.skipped],
+  ];
+  return `<section class="apartment-overview" aria-labelledby="apartment-overview-title">
+    <h3 id="apartment-overview-title">Wohnungen im Überblick</h3>
+    <div class="apartment-chart" aria-hidden="true">${categories.map(([key, , count]) => `<span class="apartment-chart-${key}" style="width:${stats.total ? (count / stats.total) * 100 : 0}%"></span>`).join('')}</div>
+    <ul class="apartment-legend">${categories.map(([key, label, count]) => `<li><span class="apartment-dot apartment-chart-${key}" aria-hidden="true"></span><span>${label}: <strong>${count}</strong></span></li>`).join('')}</ul>
+    <p class="hint">${stats.total ? 'Übersprungene Wohnungen zählen hier nur als übersprungen, auch wenn sie bereits erledigt waren.' : 'Noch keine Wohnungen angelegt.'}</p>
   </section>`;
 }
 
@@ -142,7 +157,7 @@ function viewHome() {
   const running = state.sessions.filter((s) => !s.endedAt);
   return `
   ${header('Sammelgebiete')}
-  ${state.areas.length ? progressCard(M.overallProgress(state), 'Gesamtfortschritt') : ''}
+  ${progressCard(M.overallProgress(state), 'Gesamtfortschritt', apartmentOverview(M.overallApartmentStats(state)))}
   ${running
     .map((s) => {
       const a = M.findArea(state, s.areaId);

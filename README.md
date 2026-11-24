@@ -49,7 +49,9 @@ keine Laufzeit-Abhängigkeiten**. Alle Daten bleiben auf dem Gerät.
   „Nicht geöffnet“ bleibt offen; das letzte Ergebnis wird als Hinweis angezeigt.
 - **Gamification**: Ziel- und Vorjahresbetrag pro Gebiet (ohne Ziel zählt der Vorjahresbetrag).
   Ist-Betrag je Sammelgang = manuell erfasster Betrag oder automatisch die Summe der Einzelbeträge.
-  Fortschritt in Prozent, Restbetrag, Überschuss und Erfolgszustand („Ziel erreicht“).
+  Fortschritt in Prozent, Restbetrag, Überschuss und Erfolgszustand („Ziel erreicht“). Die Übersicht
+  zeigt außerdem die Verteilung aller Wohnungen auf offen, erledigt und dauerhaft übersprungen;
+  übersprungene Wohnungen zählen dabei nicht gleichzeitig als erledigt.
 - **Übersichten**: Gebiete, Eingang (Wohnungen je Etage mit Status), Sammelgang, Wohnungshistorie,
   Gesamthistorie.
 - **Daten**: Speicherung in IndexedDB (Fallback Local Storage). Export als JSON-Sicherung und

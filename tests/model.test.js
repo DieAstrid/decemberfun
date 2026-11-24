@@ -133,3 +133,26 @@ test('areaProgress and overallProgress sum session amounts', () => {
   s = M.setSessionAmount(s, session.id, '');
   assert.equal(M.areaProgress(s, area.id).collected, 30.5, 'clearing manual amount falls back to sum');
 });
+
+test('overall apartment distribution counts each apartment once across areas and skip changes', () => {
+  assert.deepEqual(M.overallApartmentStats(M.emptyState()), { total: 0, open: 0, done: 0, skipped: 0 });
+  let { s, area, entrance } = setup();
+  let session;
+  ({ state: s, session } = M.startSession(s, area.id));
+  s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: entrance.apartments[0].id, opened: true, moneyReceived: true, amount: 5 });
+  s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: entrance.apartments[1].id, opened: false });
+  s = M.recordVisit(s, session.id, { entranceId: entrance.id, apartmentId: entrance.apartments[2].id, opened: true, moneyReceived: false, reason: M.REASONS.NO_CASH });
+  assert.deepEqual(M.overallApartmentStats(s), { total: 6, open: 4, done: 2, skipped: 0 });
+  s = M.updateApartmentSkip(s, area.id, entrance.id, entrance.apartments[2].id, true, '');
+  assert.deepEqual(M.overallApartmentStats(s), { total: 6, open: 4, done: 1, skipped: 1 });
+  let other, second;
+  ({ state: s, area: other } = M.addArea(s, { name: 'Süd' }));
+  ({ state: s, entrance: second } = M.addEntrance(s, other.id, { name: 'Anderes Haus', floors: 1, apartmentsPerFloor: 2 }));
+  s = M.updateApartmentSkip(s, other.id, second.id, second.apartments[0].id, true, '');
+  assert.deepEqual(M.overallApartmentStats(s), { total: 8, open: 5, done: 1, skipped: 2 });
+  s = M.updateApartmentSkip(s, area.id, entrance.id, entrance.apartments[2].id, false, '');
+  assert.deepEqual(M.overallApartmentStats(s), { total: 8, open: 5, done: 2, skipped: 1 });
+  for (const apt of second.apartments) s = M.updateApartmentSkip(s, other.id, second.id, apt.id, true, '');
+  const onlySkipped = { ...s, areas: [M.findArea(s, other.id)], sessions: [] };
+  assert.deepEqual(M.overallApartmentStats(onlySkipped), { total: 2, open: 0, done: 0, skipped: 2 });
+});

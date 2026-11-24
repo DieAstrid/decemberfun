@@ -467,6 +467,20 @@ export function entranceCollectionStats(state, areaId, entranceId) {
   return { total: entrance.apartments.length, done, skipped, open };
 }
 
+export function overallApartmentStats(state) {
+  const total = { total: 0, open: 0, done: 0, skipped: 0 };
+  for (const area of state.areas) {
+    for (const entrance of area.entrances) {
+      const stats = entranceCollectionStats(state, area.id, entrance.id);
+      total.total += stats.total;
+      total.open += stats.open;
+      total.skipped += stats.skipped;
+      total.done += stats.total - stats.open - stats.skipped;
+    }
+  }
+  return total;
+}
+
 // ---------- Amounts & gamification ----------
 
 export function visitsTotal(session) {
