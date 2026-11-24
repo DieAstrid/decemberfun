@@ -1,0 +1,14 @@
+{
+  "name": "sammelgebiet-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mobile Offline-PWA zur Verwaltung eines Vereins-Sammelgebiets (statisch, ohne Backend).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve -l 8080 ."
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

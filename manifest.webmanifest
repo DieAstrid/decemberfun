@@ -1,0 +1,17 @@
+{
+  "name": "Sammelgebiet – Vereinssammlung",
+  "short_name": "Sammelgebiet",
+  "description": "Sammelgebiete, Eingänge und Sammelgänge offline verwalten.",
+  "lang": "de",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6f5",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
