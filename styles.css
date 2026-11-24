@@ -79,6 +79,9 @@ small, .hint, .small-text { color: var(--muted); font-size: .85rem; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
 .btn-row input { flex: 1; min-width: 120px; }
 .form label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 10px; }
+.access-form { display: grid; gap: 10px; }
+.access-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.recovery-code { padding: 12px; border: 1px dashed var(--border); border-radius: 10px; font: 700 1.15rem/1.4 ui-monospace, monospace; text-align: center; overflow-wrap: anywhere; user-select: all; }
 input, textarea {
   display: block; width: 100%; margin-top: 4px; min-height: 44px; padding: 8px 10px; font: inherit;
   border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);

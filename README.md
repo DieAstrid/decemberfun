@@ -20,6 +20,21 @@ keine Laufzeit-Abhängigkeiten**. Alle Daten bleiben auf dem Gerät.
   der Besuche sowie „Wohnungen & Notizen“ (auch ohne Besuch).
 - **Optische Code-Abfrage**: Beim Laden der Seite mit `04122026` bestätigen.
   Kein Zugriffsschutz und keine Verschlüsselung; der Code ist im öffentlichen Quelltext sichtbar.
+- **Lokale Rollen**: Über „Admin Access“ kann mit dem Zugangscode der Startseite ein lokaler
+  Admin-Zugang mit eigenem Passwort eingerichtet werden.
+  Admins verwalten Gebiete, Eingänge und lokale E-Mail-Zuweisungen und importieren/exportieren
+  den Gebiets-/Eingangsstand als CSV. Zugewiesene Nutzer sehen nur lokal zugewiesene Gebiete
+  und können dort Eingänge verwalten. Diese Ansichten sind keine echte Zugriffssicherheit:
+  Die Daten und Zuweisungen liegen im Browserprofil und werden weder synchronisiert noch übertragen.
+  Admin-Passwort und Wiederherstellungscode gelten nur auf diesem Gerät; der Code wird bei Einrichtung
+  und Zurücksetzen einmalig angezeigt. Der Wiederherstellungscode hilft nicht nach Verlust der Browserdaten.
+  Sind Passwort und Wiederherstellungscode verloren, lässt sich der lokale Admin-Zugang mit dem
+  Zugangscode der Startseite neu einrichten; vorhandene Sammeldaten bleiben dabei erhalten. Der
+  öffentlich sichtbare Zugangscode ist nur eine optische Hürde und keine Absicherung.
+- **Admin-Statistik**: Pro Gebiet Gesamtdauer (laufende Sammelgänge bis jetzt), Sammelsumme und
+  Durchschnitt je unterschiedlicher besuchter Wohnung. Die Summen verwenden je Sammelgang den
+  manuellen Ist-Betrag, falls vorhanden, sonst die Einzelbeträge. Für geöffnet/nicht geöffnet zählt
+  pro Wohnung nur der zuletzt erfasste Besuchsstatus; einzelne Sammelgänge werden nicht angezeigt.
 - **Wiederholte Besuche**: Eine Wohnung gilt als *abgearbeitet*, sobald geöffnet wurde,
   auch bei „kein Bargeld“. Abgearbeitete Wohnungen werden im aktuellen und in späteren
   Sammelgängen ausgeblendet und lassen sich für weitere Besuche per Schalter einblenden.
@@ -46,6 +61,7 @@ sw.js                 Service Worker (Offline-Cache)
 icons/                App-Icons (SVG)
 src/model.js          Datenmodell & Geschäftslogik (rein, testbar)
 src/data.js           JSON-/CSV-Export und -Import, Validierung
+src/admin.js          Lokale Admin-Prüfung und E-Mail-Zuweisungen
 src/storage.js        IndexedDB/Local-Storage-Persistenz
 src/app.js            UI (Hash-Router, Views, Events)
 tests/                Tests mit dem eingebauten Node-Test-Runner
@@ -85,6 +101,8 @@ neue Version laden (der Service Worker aktualisiert zusätzlich im Hintergrund).
 - Daten liegen nur auf dem jeweiligen Gerät/Browser; keine Synchronisation zwischen Geräten.
   Regelmäßig eine JSON-Sicherung exportieren. Browser können Website-Daten löschen
   (z. B. iOS nach längerer Nichtnutzung); die App fordert persistenten Speicher an.
+- Lokale E-Mail-Zuweisungen und Admin-Zugangsdaten sind an das jeweilige Browserprofil gebunden.
+  Sie stellen keine Zugriffskontrolle für öffentlich erreichbare App-Dateien dar.
 - Pro Gebiet kann jeweils nur ein Sammelgang gleichzeitig laufen.
 - Icons liegen als SVG vor; einzelne ältere Plattformen (v. a. iOS-Homescreen) bevorzugen PNG-Icons.
 - Beim Verkleinern eines Eingangs (weniger Etagen/Wohnungen) gehen Besuche entfernter Wohnungen verloren.

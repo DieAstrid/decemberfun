@@ -1,6 +1,6 @@
 // Offline support: precache the app shell, serve cache-first, refresh in background.
 // Bump CACHE_VERSION whenever app files change so clients pick up the new version.
-const CACHE_VERSION = 'sammelgebiet-v3';
+const CACHE_VERSION = 'sammelgebiet-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   './icons/icon.svg',
   './icons/icon-maskable.svg',
   './src/app.js',
+  './src/admin.js',
   './src/model.js',
   './src/data.js',
   './src/storage.js',

@@ -88,21 +88,41 @@ test('visits and sessions CSV export', () => {
 });
 
 test('setup CSV export can be re-imported', () => {
-  const { s } = sample();
+  let { s, area } = sample();
+  s = M.updateArea(s, area.id, { assignedEmails: 'Team@example.org; zweite@example.org' });
   const csv = D.exportSetupCsv(s);
   const { state, added } = D.importSetupCsv(M.emptyState(), csv);
   assert.equal(added, 1);
   assert.equal(state.areas[0].name, 'Nord; "Alt"');
   assert.deepEqual(state.areas[0].entrances[0].apartmentsPerFloor, [1, 2]);
   assert.equal(state.areas[0].entrances[0].address, 'Weg 1, Stadt');
+  assert.deepEqual(state.areas[0].assignedEmails, ['team@example.org', 'zweite@example.org']);
 
   const merged = D.importSetupCsv(s, csv).state;
   assert.equal(merged.areas.length, 1, 'existing area is matched by name');
   assert.equal(merged.areas[0].entrances.length, 2);
+  assert.deepEqual(merged.areas[0].assignedEmails, ['team@example.org', 'zweite@example.org']);
 });
 
 test('setup CSV import reports the failing line', () => {
   const csv = 'Gebiet;Eingang;Adresse;Stockwerke;Wohnungen je Stockwerk\nA;H1;;3;2\nA;H2;;0;2\n';
   assert.throws(() => D.importSetupCsv(M.emptyState(), csv), /Zeile 3/);
   assert.throws(() => D.importSetupCsv(M.emptyState(), 'x;y\n1;2'), /Kopfzeile/);
+});
+
+test('legacy setup CSV imports remain compatible and malformed assignment emails are rejected', () => {
+  const legacyCsv = 'Gebiet;Eingang;Adresse;Stockwerke;Wohnungen je Stockwerk\nAlt;Haus;;1;2\n';
+  assert.deepEqual(D.importSetupCsv(M.emptyState(), legacyCsv).state.areas[0].assignedEmails, []);
+  const invalidCsv = 'Gebiet;Eingang;Adresse;Stockwerke;Wohnungen je Stockwerk;Zugewiesene E-Mails\nA;Haus;;1;2;kein-email\n';
+  assert.throws(() => D.importSetupCsv(M.emptyState(), invalidCsv), /Zeile 2: Ungültige E-Mail-Adresse/);
+});
+
+test('setup CSV round-trips areas that do not yet have entrances', () => {
+  let state = M.emptyState();
+  let area;
+  ({ state, area } = M.addArea(state, { name: 'Neues Gebiet', assignedEmails: 'team@example.org' }));
+  const restored = D.importSetupCsv(M.emptyState(), D.exportSetupCsv(state));
+  assert.equal(restored.added, 0);
+  assert.equal(restored.state.areas[0].name, 'Neues Gebiet');
+  assert.deepEqual(restored.state.areas[0].assignedEmails, ['team@example.org']);
 });

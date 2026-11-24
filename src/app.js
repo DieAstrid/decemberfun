@@ -1,5 +1,6 @@
 import * as M from './model.js';
 import * as D from './data.js';
+import { createAdminConfig, createRecoveryCode, emailHasAreaAccess, normalizeEmails, resetAdminPassword, verifyAdminPassword } from './admin.js';
 import { createStorage } from './storage.js';
 
 // ---------- helpers ----------
@@ -24,8 +25,26 @@ const duration = (min) => (min === null || min === undefined ? '' : min >= 60 ? 
 let state = M.emptyState();
 let storage;
 let accessConfirmed = false;
+let accessMode = 'legacy';
+let accessScreen = 'home';
+let adminConfig = null;
+let adminConfigError = false;
+let recoveryCodeToShow = '';
+let userEmail = '';
 const drafts = new Map(); // apartmentId -> partial visit being entered
 let showDone = localStorage.getItem('showDone') === '1';
+const ADMIN_KEY = 'sammelgebiet-admin';
+const ACCESS_CODE = '04122026';
+
+function storeAdminConfig(config) {
+  localStorage.setItem(ADMIN_KEY, JSON.stringify(config));
+  adminConfig = config;
+  adminConfigError = false;
+}
+
+function assignedAreas(email) {
+  return state.areas.filter((area) => emailHasAreaAccess(area, email));
+}
 
 function toast(msg, kind = 'info') {
   $toast.textContent = msg;
@@ -103,7 +122,7 @@ function header(title, back) {
     ['light', 'Hellmodus', '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>'],
     ['dark', 'Dunkelmodus', '<path d="M20.5 13A9 9 0 0 1 11 3.5 9 9 0 1 0 20.5 13Z"/>'],
   ];
-  return `<header class="page-head">${back ? `<a class="back" href="${back}" aria-label="Zurück">‹</a>` : ''}<h1>${esc(title)}</h1>
+  return `<header class="page-head">${back ? `<a class="back" href="${back}" ${accessConfirmed ? '' : 'data-action="back-access"'} aria-label="Zurück">‹</a>` : ''}<h1>${esc(title)}</h1>
     <div class="theme-toggle" role="group" aria-label="Darstellung">
       ${modes.map(([value, label, icon]) => `<button type="button" class="theme-button" data-action="theme" data-value="${value}" aria-label="${label}" title="${label}" aria-pressed="${theme === value}">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icon}</svg>
@@ -145,6 +164,156 @@ function viewHome() {
   <a class="btn primary block" href="#/area/new">＋ Neues Sammelgebiet</a>`;
 }
 
+function viewAdminHome() {
+  return `
+  ${header('Admin-Verwaltung')}
+  <p class="hint">Nur lokal auf diesem Gerät gespeichert. Diese Ansicht ist kein Schutz vor Personen mit Zugriff auf Browser oder Gerät.</p>
+  <div class="list">
+    ${state.areas.map((area) => `<a class="card" href="#/area/${encodeURIComponent(area.id)}">
+      <div class="row between"><strong>${esc(area.name)}</strong><span>›</span></div>
+      <small>${area.entrances.length} Eingänge · ${(area.assignedEmails ?? []).length} E-Mail-Zuweisungen</small>
+    </a>`).join('')}
+  </div>
+  ${state.areas.length ? '' : '<p class="empty">Noch keine Gebiete angelegt.</p>'}
+  <a class="btn primary block" href="#/area/new">＋ Gebiet anlegen</a>
+  <section class="card">
+    <h2>Gebiete & Eingänge übertragen</h2>
+    <button class="btn block" data-action="export-setup">CSV exportieren</button>
+    <label class="btn block file">CSV importieren<input type="file" accept=".csv,text/csv" data-import="csv" hidden></label>
+    <p class="hint">Spalten: ${D.SETUP_CSV_HEADER.join('; ')}</p>
+  </section>`;
+}
+
+function viewUserHome() {
+  const areas = assignedAreas(userEmail);
+  return `
+  ${header('Meine Sammelgebiete')}
+  <p class="hint">Lokale Zuweisungen für <strong>${esc(userEmail)}</strong>. Die Anmeldung synchronisiert oder überträgt keine Daten.</p>
+  ${areas.length ? `<div class="list">${areas.map((area) => `<a class="card" href="#/area/${encodeURIComponent(area.id)}">
+    <div class="row between"><strong>${esc(area.name)}</strong><span>›</span></div>
+    <small>${area.entrances.length} Eingänge</small>
+  </a>`).join('')}</div>` : '<p class="empty">Für diese E-Mail-Adresse wurden auf diesem Gerät keine Gebiete zugewiesen.</p>'}`;
+}
+
+function viewAdminArea(areaId) {
+  const area = M.findArea(state, areaId);
+  if (!area) return notFound();
+  const stats = M.areaStatistics(state, area.id);
+  return `
+  ${header(area.name, '#/')}
+  <p class="hint">Zugewiesen an: ${esc((area.assignedEmails ?? []).join(', ') || 'niemanden')}</p>
+  <section class="card">
+    <h2>Statistik</h2>
+    <div class="row between"><span>Gesamtdauer</span><strong data-admin-duration="${esc(area.id)}">${duration(stats.durationMinutes)}</strong></div>
+    <div class="row between"><span>Geöffnet / nicht geöffnet</span><strong>${stats.opened} / ${stats.notOpened}</strong></div>
+    <div class="row between"><span>Gesamtsammelsumme</span><strong>${money(stats.collected)}</strong></div>
+    <div class="row between"><span>Durchschnitt je besuchter Wohnung</span><strong>${stats.averagePerVisited === null ? '–' : money(stats.averagePerVisited)}</strong></div>
+    <p class="hint">Je Wohnung zählt der zuletzt erfasste Status. Durchschnitt: Gesamtsammelsumme geteilt durch ${stats.visited} unterschiedliche besuchte Wohnungen. Laufende Sammelgänge zählen bis jetzt zur Dauer.</p>
+  </section>
+  <section>
+    <div class="row between"><h2>Eingänge</h2><a class="btn small" href="#/area/${encodeURIComponent(area.id)}/entrance/new">＋ Eingang</a></div>
+    ${area.entrances.length ? '' : '<p class="empty">Noch keine Eingänge angelegt.</p>'}
+    <div class="list">${area.entrances.map((entrance) => `<div class="card row between">
+      <span class="grow"><strong>${esc(entrance.name)}</strong><br><small>${esc(entrance.address)}${entrance.address ? ' · ' : ''}${entrance.floors} Etagen · ${entrance.apartments.length} Wohnungen</small></span>
+      <a class="btn small ghost" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/edit" aria-label="Bearbeiten">✎</a>
+    </div>`).join('')}</div>
+  </section>
+  <a class="btn block" href="#/area/${encodeURIComponent(area.id)}/edit">Gebiet bearbeiten</a>
+  <button class="btn danger block" data-action="delete-area" data-id="${esc(area.id)}">Gebiet löschen</button>`;
+}
+
+function viewUserArea(areaId) {
+  const area = assignedAreas(userEmail).find((item) => item.id === areaId);
+  if (!area) return notFound();
+  return `
+  ${header(area.name, '#/')}
+  <section>
+    <div class="row between"><h2>Eingänge</h2><a class="btn small" href="#/area/${encodeURIComponent(area.id)}/entrance/new">＋ Eingang</a></div>
+    ${area.entrances.length ? '' : '<p class="empty">Noch keine Eingänge angelegt.</p>'}
+    <div class="list">${area.entrances.map((entrance) => `<div class="card row between">
+      <a class="grow" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}">
+        <strong>${esc(entrance.name)}</strong><br><small>${esc(entrance.address)}${entrance.address ? ' · ' : ''}${entrance.floors} Etagen · ${entrance.apartments.length} Wohnungen</small>
+      </a>
+      <a class="btn small ghost" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/edit" aria-label="Bearbeiten">✎</a>
+    </div>`).join('')}</div>
+  </section>`;
+}
+
+function viewUserEntrance(areaId, entranceId) {
+  const area = assignedAreas(userEmail).find((item) => item.id === areaId);
+  const entrance = area?.entrances.find((item) => item.id === entranceId);
+  if (!entrance) return notFound();
+  return `
+  ${header(entrance.name, `#/area/${encodeURIComponent(area.id)}`)}
+  <p class="hint">${esc(area.name)}${entrance.address ? ` · ${esc(entrance.address)}` : ''}</p>
+  <section class="card stats"><div><strong>${entrance.apartments.length}</strong><small>Wohnungen</small></div></section>
+  <a class="btn block" href="#/area/${encodeURIComponent(area.id)}/entrance/${encodeURIComponent(entrance.id)}/edit">Eingang bearbeiten</a>
+  <button class="btn danger block" data-action="delete-entrance" data-area="${esc(area.id)}" data-id="${esc(entrance.id)}">Eingang löschen</button>`;
+}
+
+function viewAccess() {
+  if (accessScreen === 'admin-recovery-display') {
+    return `${header('Wiederherstellungscode')}
+      <section class="card">
+        <p>Notiere diesen Code sicher. Er wird nur jetzt angezeigt und kann zum Zurücksetzen des Admin-Passworts auf diesem Gerät verwendet werden.</p>
+        <p class="recovery-code" aria-label="Wiederherstellungscode">${esc(recoveryCodeToShow)}</p>
+        <p class="hint">Der Code ist keine Wiederherstellung, wenn Browserdaten oder das Gerät verloren gehen. Die App speichert weiterhin alles lokal.</p>
+        <button class="btn primary block" data-action="finish-admin-setup">Code notiert – weiter</button>
+      </section>`;
+  }
+  if (accessScreen === 'admin') {
+    return `${header('Admin Access', '#/')}
+      ${adminConfigError
+        ? `<p class="card">Die lokale Admin-Konfiguration ist beschädigt. Du kannst sie unten mit dem Zugangscode neu einrichten; die Sammeldaten bleiben erhalten.</p>`
+        : adminConfig
+          ? `<form class="card form" data-form="admin-login">
+            <p class="hint">Hier das selbst eingerichtete Admin-Passwort eingeben, nicht den Zugangscode der Startseite.</p>
+            <label>Admin-Passwort<input type="password" name="password" autocomplete="current-password" required data-autofocus></label>
+            <button class="btn primary block">Anmelden</button>
+          </form>`
+        : `<form class="card form" data-form="admin-setup">
+            <h2>Admin lokal einrichten</h2>
+            <p class="hint">Auf diesem Gerät ist noch kein Admin-Passwort eingerichtet. Lege hier ein eigenes Passwort fest.</p>
+            <label>Zugangscode der Startseite<input name="code" type="text" inputmode="numeric" autocomplete="off" required data-autofocus></label>
+            <label>Passwort (mindestens 8 Zeichen)<input type="password" name="password" minlength="8" autocomplete="new-password" required></label>
+            <label>Passwort wiederholen<input type="password" name="confirmPassword" minlength="8" autocomplete="new-password" required></label>
+            <button class="btn primary block">Admin einrichten</button>
+          </form>`}
+      ${adminConfig && !adminConfigError ? `<form class="card form" data-form="admin-recovery">
+        <h2>Passwort wiederherstellen</h2>
+        <label>Wiederherstellungscode<input name="recoveryCode" autocomplete="off" required></label>
+        <label>Neues Passwort<input type="password" name="password" minlength="8" autocomplete="new-password" required></label>
+        <button class="btn block">Passwort zurücksetzen</button>
+      </form>` : ''}
+      ${adminConfig || adminConfigError ? `<form class="card form" data-form="admin-reinitialize">
+        <h2>Admin-Zugang lokal neu einrichten</h2>
+        <p class="hint">Falls Passwort und Wiederherstellungscode fehlen: Mit dem Zugangscode der Startseite kannst du hier ein neues Admin-Passwort festlegen. Das bisherige Passwort und der bisherige Wiederherstellungscode werden ersetzt; Sammeldaten bleiben erhalten.</p>
+        <label>Zugangscode der Startseite<input name="code" type="text" inputmode="numeric" autocomplete="off" required></label>
+        <label>Neues Admin-Passwort<input type="password" name="password" minlength="8" autocomplete="new-password" required></label>
+        <label>Neues Passwort wiederholen<input type="password" name="confirmPassword" minlength="8" autocomplete="new-password" required></label>
+        <button class="btn block">Admin-Zugang neu einrichten</button>
+      </form>` : ''}
+      <p class="hint">Admin-Zugang und Daten gelten nur in diesem Browserprofil. Das ist keine echte Zugriffssicherheit gegenüber Personen mit Geräte- oder Browserzugriff.</p>`;
+  }
+  if (accessScreen === 'user') {
+    return `${header('Gebiets-Zugang', '#/')}
+      <form class="card form" data-form="user-login">
+        <label>E-Mail-Adresse<input type="email" name="email" autocomplete="email" required data-autofocus></label>
+        <button class="btn primary block">Gebiete anzeigen</button>
+      </form>
+      <p class="hint">Es werden nur Gebiete angezeigt, die auf diesem Gerät lokal dieser E-Mail-Adresse zugewiesen wurden.</p>`;
+  }
+  return `${header('Zugangscode eingeben')}
+    <form class="card form access-form" data-form="access">
+      <input name="code" type="text" inputmode="numeric" aria-label="Zugangscode" autocomplete="off" required data-autofocus>
+      <button class="btn primary block">Bestätigen</button>
+    </form>
+    <div class="access-links">
+      <button class="btn" data-action="open-admin">Admin Access</button>
+      <button class="btn" data-action="open-user">Gebiets-Zugang</button>
+    </div>`;
+}
+
 function viewAreaForm(areaId) {
   const a = areaId ? M.findArea(state, areaId) : null;
   if (areaId && !a) return notFound();
@@ -156,6 +325,8 @@ function viewAreaForm(areaId) {
     <label>Vorjahresbetrag (€)<input name="previousYearAmount" inputmode="decimal" value="${a?.previousYearAmount || ''}" placeholder="0,00"></label>
     <p class="hint">Ohne Zielbetrag wird der Vorjahresbetrag als Ziel verwendet.</p>
     <label>Notiz<textarea name="note" rows="2">${esc(a?.note)}</textarea></label>
+    ${accessMode === 'admin' ? `<label>Zugewiesene E-Mail-Adressen<input name="assignedEmails" value="${esc((a?.assignedEmails ?? []).join(', '))}" placeholder="name@example.org, team@example.org"></label>
+    <p class="hint">Mehrere Adressen mit Komma oder Semikolon trennen. Die Zuordnung wird nur auf diesem Gerät gespeichert.</p>` : ''}
     <button class="btn primary block">Speichern</button>
   </form>
   ${a ? `<button class="btn danger block" data-action="delete-area" data-id="${a.id}">Gebiet löschen</button>` : ''}`;
@@ -449,6 +620,32 @@ function viewData() {
 function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
   const [p0, p1, p2, p3, p4, p5] = parts;
+  if (accessMode === 'admin') {
+    if (!p0) return ['home', viewAdminHome()];
+    if (p0 === 'area') {
+      if (p1 === 'new') return ['home', viewAreaForm(null)];
+      if (p2 === 'edit') return ['home', viewAreaForm(p1)];
+      if (p2 === 'entrance') {
+        if (p3 === 'new') return ['home', viewEntranceForm(p1, null)];
+        if (p4 === 'edit') return ['home', viewEntranceForm(p1, p3)];
+      }
+      return ['home', viewAdminArea(p1)];
+    }
+    return ['home', notFound()];
+  }
+  if (accessMode === 'user') {
+    if (!p0) return ['home', viewUserHome()];
+    if (p0 === 'area') {
+      if (!assignedAreas(userEmail).some((area) => area.id === p1)) return ['home', notFound()];
+      if (p2 === 'entrance') {
+        if (p3 === 'new') return ['home', viewEntranceForm(p1, null)];
+        if (p4 === 'edit') return ['home', viewEntranceForm(p1, p3)];
+        return ['home', viewUserEntrance(p1, p3)];
+      }
+      return ['home', viewUserArea(p1)];
+    }
+    return ['home', notFound()];
+  }
   if (!p0) return ['home', viewHome()];
   if (p0 === 'history') return ['history', viewHistory()];
   if (p0 === 'data') return ['data', viewData()];
@@ -473,16 +670,20 @@ function route() {
 function render() {
   $nav.hidden = !accessConfirmed;
   if (!accessConfirmed) {
-    $main.innerHTML = `${header('Zugangscode eingeben')}
-      <form class="card form" data-form="access">
-        <input name="code" type="text" inputmode="numeric" aria-label="Zugangscode" autocomplete="off" required data-autofocus>
-        <button class="btn primary block">Bestätigen</button>
-      </form>`;
+    $main.innerHTML = viewAccess();
     $main.querySelector('[data-autofocus]')?.focus();
     return;
   }
   const [tab, html] = route();
   $main.innerHTML = html;
+  if (accessMode === 'admin' || accessMode === 'user') {
+    $nav.innerHTML = `<a href="#/" class="active"><span>${accessMode === 'admin' ? '⚙' : '🏠'}</span>${accessMode === 'admin' ? 'Verwaltung' : 'Gebiete'}</a>
+      <a href="#/" data-action="logout"><span>↩</span>Abmelden</a>`;
+    const form = $main.querySelector('[data-form="entrance"]');
+    if (form) updateEntrancePreview(form);
+    $main.querySelector('[data-autofocus]')?.focus();
+    return;
+  }
   const running = state.sessions.find((s) => !s.endedAt);
   $nav.innerHTML = `
     <a href="#/" class="${tab === 'home' ? 'active' : ''}"><span>🏠</span>Übersicht</a>
@@ -518,6 +719,35 @@ document.addEventListener('click', (ev) => {
   if (!el || el.matches('input[type=checkbox]')) return;
   const { action, id, apt, value } = el.dataset;
   switch (action) {
+    case 'open-admin':
+      accessConfirmed = false;
+      accessScreen = 'admin';
+      render();
+      break;
+    case 'open-user':
+      accessConfirmed = false;
+      accessScreen = 'user';
+      render();
+      break;
+    case 'back-access':
+      accessScreen = 'home';
+      render();
+      break;
+    case 'finish-admin-setup':
+      accessMode = 'admin';
+      accessConfirmed = true;
+      accessScreen = 'home';
+      recoveryCodeToShow = '';
+      location.hash = '#/';
+      render();
+      break;
+    case 'logout':
+      accessConfirmed = false;
+      accessMode = 'legacy';
+      accessScreen = 'home';
+      userEmail = '';
+      render();
+      break;
     case 'theme':
       try {
         if (!['system', 'light', 'dark'].includes(value)) throw new Error('Ungültige Darstellung.');
@@ -642,7 +872,7 @@ document.addEventListener('input', (ev) => {
   if (form) updateEntrancePreview(form);
 });
 
-document.addEventListener('submit', (ev) => {
+document.addEventListener('submit', async (ev) => {
   const form = ev.target.closest('[data-form]');
   if (!form) return;
   ev.preventDefault();
@@ -650,24 +880,138 @@ document.addEventListener('submit', (ev) => {
   const { id } = form.dataset;
   switch (form.dataset.form) {
     case 'access':
-      if (f.code !== '04122026') {
+      if (f.code !== ACCESS_CODE) {
         toast('Der Zugangscode stimmt nicht.', 'error');
         return;
       }
       accessConfirmed = true;
+      accessMode = 'legacy';
+      accessScreen = 'home';
       clearTimeout(toast.t);
       $toast.className = 'toast';
       render();
       break;
+    case 'admin-setup':
+      if (adminConfig || adminConfigError) {
+        toast('Admin-Zugang ist bereits eingerichtet.', 'error');
+        return;
+      }
+      if (f.code !== ACCESS_CODE) {
+        toast('Der Zugangscode der Startseite stimmt nicht.', 'error');
+        return;
+      }
+      if (f.password.length < 8) {
+        toast('Das Passwort muss mindestens 8 Zeichen lang sein.', 'error');
+        return;
+      }
+      if (f.password !== f.confirmPassword) {
+        toast('Die Passwörter stimmen nicht überein.', 'error');
+        return;
+      }
+      try {
+        recoveryCodeToShow = createRecoveryCode();
+        storeAdminConfig(await createAdminConfig(f.password, recoveryCodeToShow));
+        accessScreen = 'admin-recovery-display';
+        render();
+      } catch (err) {
+        toast(`Admin-Zugang konnte nicht eingerichtet werden: ${err.message}`, 'error');
+      }
+      break;
+    case 'admin-reinitialize':
+      if (!adminConfig && !adminConfigError) {
+        toast('Richte zuerst den lokalen Admin-Zugang ein.', 'error');
+        return;
+      }
+      if (f.code !== ACCESS_CODE) {
+        toast('Der Zugangscode der Startseite stimmt nicht.', 'error');
+        return;
+      }
+      if (f.password.length < 8) {
+        toast('Das Passwort muss mindestens 8 Zeichen lang sein.', 'error');
+        return;
+      }
+      if (f.password !== f.confirmPassword) {
+        toast('Die Passwörter stimmen nicht überein.', 'error');
+        return;
+      }
+      if (!confirm('Admin-Passwort und Wiederherstellungscode ersetzen? Sammelgebiete, Besuche und übrige Daten bleiben erhalten.')) return;
+      try {
+        const code = createRecoveryCode();
+        const config = await createAdminConfig(f.password, code);
+        storeAdminConfig(config);
+        recoveryCodeToShow = code;
+        accessScreen = 'admin-recovery-display';
+        render();
+      } catch (err) {
+        toast(`Admin-Zugang konnte nicht neu eingerichtet werden: ${err.message}`, 'error');
+      }
+      break;
+    case 'admin-login':
+      try {
+        if (!adminConfig || !(await verifyAdminPassword(adminConfig, f.password))) {
+          toast('Das Admin-Passwort stimmt nicht.', 'error');
+          return;
+        }
+        accessMode = 'admin';
+        accessConfirmed = true;
+        accessScreen = 'home';
+        location.hash = '#/';
+        render();
+      } catch (err) {
+        toast(`Admin-Anmeldung fehlgeschlagen: ${err.message}`, 'error');
+      }
+      break;
+    case 'admin-recovery':
+      if (!adminConfig) {
+        toast('Richte zuerst den lokalen Admin-Zugang ein.', 'error');
+        return;
+      }
+      if (f.password.length < 8) {
+        toast('Das neue Passwort muss mindestens 8 Zeichen lang sein.', 'error');
+        return;
+      }
+      try {
+        const result = await resetAdminPassword(adminConfig, f.recoveryCode, f.password);
+        if (!result) {
+          toast('Der Wiederherstellungscode stimmt nicht.', 'error');
+          return;
+        }
+        storeAdminConfig(result.config);
+        recoveryCodeToShow = result.recoveryCode;
+        accessScreen = 'admin-recovery-display';
+        render();
+      } catch (err) {
+        toast(`Passwort konnte nicht zurückgesetzt werden: ${err.message}`, 'error');
+      }
+      break;
+    case 'user-login':
+      try {
+        userEmail = normalizeEmails([f.email])[0];
+        accessMode = 'user';
+        accessConfirmed = true;
+        accessScreen = 'home';
+        location.hash = '#/';
+        render();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+      break;
     case 'apartment-note':
+      if (accessMode !== 'legacy') return;
       act((st) => M.updateApartmentNote(st, form.dataset.area, form.dataset.entrance, form.dataset.apt, f.note), 'Notiz gespeichert');
       break;
     case 'area':
+      if (accessMode === 'user') {
+        toast('Gebiete können nur mit Admin-Zugang verwaltet werden.', 'error');
+        return;
+      }
       try {
         if (id) {
-          if (act((st) => M.updateArea(st, id, f), 'Gespeichert')) go(`#/area/${id}`);
+          const input = accessMode === 'admin' ? { ...f, assignedEmails: normalizeEmails(f.assignedEmails) } : f;
+          if (act((st) => M.updateArea(st, id, input), 'Gespeichert')) go(`#/area/${id}`);
         } else {
-          const { state: next, area } = M.addArea(state, f);
+          const input = accessMode === 'admin' ? { ...f, assignedEmails: normalizeEmails(f.assignedEmails) } : f;
+          const { state: next, area } = M.addArea(state, input);
           commit(next, 'Gebiet angelegt').then(() => go(`#/area/${area.id}`));
         }
       } catch (err) {
@@ -676,6 +1020,10 @@ document.addEventListener('submit', (ev) => {
       break;
     case 'entrance': {
       const areaId = form.dataset.area;
+      if (accessMode === 'user' && !assignedAreas(userEmail).some((area) => area.id === areaId)) {
+        toast('Dieses Sammelgebiet ist für diese E-Mail-Adresse nicht freigegeben.', 'error');
+        return;
+      }
       const input = { ...f, floors: Number(f.floors) };
       try {
         const next = id ? M.updateEntrance(state, areaId, id, input) : M.addEntrance(state, areaId, input).state;
@@ -710,6 +1058,8 @@ window.addEventListener('hashchange', () => {
 setInterval(() => {
   const el = document.querySelector('[data-elapsed]:not([data-elapsed=""])');
   if (el) el.textContent = duration(Math.round((Date.now() - new Date(el.dataset.elapsed)) / 60000));
+  const adminDuration = document.querySelector('[data-admin-duration]');
+  if (adminDuration) adminDuration.textContent = duration(M.areaStatistics(state, adminDuration.dataset.adminDuration).durationMinutes);
 }, 30000);
 
 // ---------- boot ----------
@@ -717,6 +1067,18 @@ setInterval(() => {
 (async function boot() {
   storage = await createStorage();
   state = await storage.load();
+  try {
+    const savedAdminConfig = localStorage.getItem(ADMIN_KEY);
+    if (savedAdminConfig) {
+      adminConfig = JSON.parse(savedAdminConfig);
+      if (!adminConfig.passwordSalt || !adminConfig.passwordHash || !adminConfig.recoverySalt || !adminConfig.recoveryHash) {
+        throw new Error('Unvollständige Admin-Konfiguration');
+      }
+    }
+  } catch (err) {
+    adminConfigError = true;
+    console.error('Lokale Admin-Konfiguration ungültig', err);
+  }
   render();
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('Service Worker nicht registriert', err));

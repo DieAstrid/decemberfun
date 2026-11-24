@@ -1,4 +1,5 @@
 // Pure data model and business logic. No DOM or storage access here so it can be tested in Node.
+import { normalizeEmails } from './admin.js';
 
 export const SCHEMA_VERSION = 1;
 
@@ -135,13 +136,14 @@ function cleanName(name, what) {
   return n;
 }
 
-export function addArea(state, { name, targetAmount, previousYearAmount, note } = {}, now = new Date()) {
+export function addArea(state, { name, targetAmount, previousYearAmount, note, assignedEmails } = {}, now = new Date()) {
   const area = {
     id: createId('area'),
     name: cleanName(name, 'Name des Sammelgebiets'),
     targetAmount: toNonNegativeNumber(targetAmount),
     previousYearAmount: toNonNegativeNumber(previousYearAmount),
     note: String(note ?? '').trim(),
+    assignedEmails: normalizeEmails(assignedEmails),
     entrances: [],
     createdAt: now.toISOString(),
   };
@@ -159,6 +161,7 @@ export function updateArea(state, areaId, patch) {
       if ('targetAmount' in patch) next.targetAmount = toNonNegativeNumber(patch.targetAmount);
       if ('previousYearAmount' in patch) next.previousYearAmount = toNonNegativeNumber(patch.previousYearAmount);
       if ('note' in patch) next.note = String(patch.note ?? '').trim();
+      if ('assignedEmails' in patch) next.assignedEmails = normalizeEmails(patch.assignedEmails);
       return next;
     }),
   };
@@ -451,6 +454,38 @@ export function sessionStats(session) {
     durationMinutes: session.endedAt
       ? Math.max(0, Math.round((new Date(session.endedAt) - new Date(session.startedAt)) / 60000))
       : null,
+  };
+}
+
+/** Aggregates visits by their latest recorded status, counting each apartment only once. */
+export function areaStatistics(state, areaId, now = new Date()) {
+  if (!findArea(state, areaId)) throw new Error('Sammelgebiet nicht gefunden.');
+  const sessions = state.sessions.filter((session) => session.areaId === areaId);
+  const latestVisits = new Map();
+  let durationMs = 0;
+  let collected = 0;
+  for (const session of sessions) {
+    const start = new Date(session.startedAt).getTime();
+    const end = session.endedAt ? new Date(session.endedAt).getTime() : now.getTime();
+    durationMs += Math.max(0, end - start);
+    collected += sessionAmount(session);
+    for (const visit of session.visits) {
+      const previous = latestVisits.get(visit.apartmentId);
+      if (!previous || new Date(visit.at).getTime() >= new Date(previous.at).getTime()) {
+        latestVisits.set(visit.apartmentId, visit);
+      }
+    }
+  }
+  const visited = latestVisits.size;
+  const opened = [...latestVisits.values()].filter((visit) => visit.opened).length;
+  const total = roundMoney(collected);
+  return {
+    durationMinutes: Math.round(durationMs / 60000),
+    opened,
+    notOpened: visited - opened,
+    visited,
+    collected: total,
+    averagePerVisited: visited ? roundMoney(total / visited) : null,
   };
 }
 

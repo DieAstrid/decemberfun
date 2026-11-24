@@ -13,6 +13,7 @@ import {
   sessionAmount,
   sessionStats,
 } from './model.js';
+import { normalizeEmails } from './admin.js';
 
 export const BACKUP_FORMAT = 'sammelgebiet-backup';
 
@@ -65,6 +66,7 @@ export function normalizeState(raw) {
       targetAmount: parseAmount(a.targetAmount) ?? 0,
       previousYearAmount: parseAmount(a.previousYearAmount) ?? 0,
       note: isStr(a.note) ? a.note : '',
+      assignedEmails: normalizeEmails(a.assignedEmails),
       entrances,
       createdAt: isIso(a.createdAt) ? a.createdAt : new Date(0).toISOString(),
     };
@@ -241,19 +243,23 @@ export function exportSessionsCsv(state) {
   return toCsv(rows);
 }
 
-export const SETUP_CSV_HEADER = ['Gebiet', 'Eingang', 'Adresse', 'Stockwerke', 'Wohnungen je Stockwerk'];
+export const SETUP_CSV_HEADER = ['Gebiet', 'Eingang', 'Adresse', 'Stockwerke', 'Wohnungen je Stockwerk', 'Zugewiesene E-Mails'];
 
 /** Exports the setup (areas + entrances) in the same format accepted by importSetupCsv. */
 export function exportSetupCsv(state) {
   const rows = [SETUP_CSV_HEADER];
   for (const a of state.areas) {
-    for (const e of a.entrances) rows.push([a.name, e.name, e.address, e.floors, e.apartmentsPerFloor.join(',')]);
+    if (!a.entrances.length) {
+      rows.push([a.name, '', '', '', '', (a.assignedEmails ?? []).join(',')]);
+      continue;
+    }
+    for (const e of a.entrances) rows.push([a.name, e.name, e.address, e.floors, e.apartmentsPerFloor.join(','), (a.assignedEmails ?? []).join(',')]);
   }
   return toCsv(rows);
 }
 
 /**
- * Imports areas/entrances from CSV (columns: Gebiet; Eingang; Adresse; Stockwerke; Wohnungen je Stockwerk).
+ * Imports areas/entrances from CSV (the assignment email column is optional for older files).
  * Areas are matched by name and created if missing. Returns the new state and the number of entrances added.
  */
 export function importSetupCsv(state, text) {
@@ -273,13 +279,24 @@ export function importSetupCsv(state, text) {
       const areaName = get(0);
       let area = next.areas.find((a) => a.name.toLowerCase() === areaName.toLowerCase());
       if (!area) ({ state: next, area } = addArea(next, { name: areaName }));
-      ({ state: next } = addEntrance(next, area.id, {
-        name: get(1),
-        address: get(2),
-        floors: Number(get(3)),
-        apartmentsPerFloor: get(4),
-      }));
-      added++;
+      if (get(1)) {
+        ({ state: next } = addEntrance(next, area.id, {
+          name: get(1),
+          address: get(2),
+          floors: Number(get(3)),
+          apartmentsPerFloor: get(4),
+        }));
+        added++;
+      } else if (get(2) || get(3) || get(4)) {
+        throw new Error('Eingangsdetails benötigen einen Eingangsnamen.');
+      }
+      if (idx[5] >= 0) {
+        const assignments = normalizeEmails(get(5));
+        next = {
+          ...next,
+          areas: next.areas.map((item) => item.id === area.id ? { ...item, assignedEmails: assignments } : item),
+        };
+      }
     } catch (err) {
       throw new Error(`Zeile ${i + 2}: ${err.message}`);
     }
