@@ -13,10 +13,17 @@ keine Laufzeit-Abhängigkeiten**. Alle Daten bleiben auf dem Gerät.
   (vorausgefüllt mit „jetzt“, änderbar). Wohnungen werden nach Etage angezeigt. Pro Wohnung:
   geöffnet ja/nein → bei ja: Geld erhalten ja (Betrag optional) / nein (Grund „kein Bargeld“
   oder „kein Wille“).
-- **Wiederholte Besuche**: Eine Wohnung gilt als *abgearbeitet*, wenn geöffnet wurde und
-  entweder Geld gegeben oder „kein Wille“ erfasst wurde. Abgearbeitete Wohnungen werden in
-  späteren Sammelgängen ausgeblendet und lassen sich per Schalter einblenden. „Nicht geöffnet“
-  und „kein Bargeld“ bleiben offen; das letzte Ergebnis wird als Hinweis angezeigt.
+  „Nicht geöffnet“ bleibt im selben Sammelgang als hellrot markierter Button sichtbar,
+  auch nach erneutem Öffnen des Eingangs. Jeder neue Sammelgang beginnt ohne aktuelle Auswahl.
+- **Wohnungsnotizen**: Pro Wohnung separat speichern; bleiben bei späteren Sammelgängen und
+  Änderungen bestehender Eingänge erhalten. Enthalten in JSON-Sicherungen und im CSV-Export
+  der Besuche sowie „Wohnungen & Notizen“ (auch ohne Besuch).
+- **Optische Code-Abfrage**: Beim Laden der Seite mit `04122026` bestätigen.
+  Kein Zugriffsschutz und keine Verschlüsselung; der Code ist im öffentlichen Quelltext sichtbar.
+- **Wiederholte Besuche**: Eine Wohnung gilt als *abgearbeitet*, sobald geöffnet wurde,
+  auch bei „kein Bargeld“. Abgearbeitete Wohnungen werden im aktuellen und in späteren
+  Sammelgängen ausgeblendet und lassen sich für weitere Besuche per Schalter einblenden.
+  „Nicht geöffnet“ bleibt offen; das letzte Ergebnis wird als Hinweis angezeigt.
 - **Gamification**: Ziel- und Vorjahresbetrag pro Gebiet (ohne Ziel zählt der Vorjahresbetrag).
   Ist-Betrag je Sammelgang = manuell erfasster Betrag oder automatisch die Summe der Einzelbeträge.
   Fortschritt in Prozent, Restbetrag, Überschuss und Erfolgszustand („Ziel erreicht“).

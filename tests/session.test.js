@@ -89,22 +89,23 @@ test('repeated visits: done apartments are hidden in later sessions and can be s
   const rec = (sid, a, r) => (s = M.recordVisit(s, sid, { entranceId: entrance.id, apartmentId: a, ...r }));
   rec(first.id, apt(0, 1), { opened: true, moneyReceived: true, amount: 10 }); // final
   rec(first.id, apt(0, 2), { opened: true, moneyReceived: false, reason: M.REASONS.NO_WILL }); // final
-  rec(first.id, apt(1, 1), { opened: true, moneyReceived: false, reason: M.REASONS.NO_CASH }); // revisit
+  rec(first.id, apt(1, 1), { opened: true, moneyReceived: false, reason: M.REASONS.NO_CASH }); // opened
   rec(first.id, apt(1, 2), { opened: false }); // revisit
 
-  // Within the running session nothing is hidden: results belong to this session.
-  assert.equal(M.apartmentsForSession(s, first.id, entrance.id).length, 4);
+  assert.deepEqual(M.apartmentsForSession(s, first.id, entrance.id).map((a) => a.id), [apt(1, 2)]);
+  assert.equal(M.apartmentsForSession(s, first.id, entrance.id, { showDone: true }).length, 4);
   s = M.endSession(s, first.id, new Date('2026-11-01T12:00:00Z'));
 
   let second;
   ({ state: s, session: second } = M.startSession(s, area.id, new Date('2026-11-08T10:00:00Z')));
   const pending = M.apartmentsForSession(s, second.id, entrance.id);
-  assert.deepEqual(pending.map((a) => a.id), [apt(1, 1), apt(1, 2)]);
-  assert.equal(pending[0].status.lastVisit.reason, M.REASONS.NO_CASH, 'previous result is shown as hint');
+  assert.deepEqual(pending.map((a) => a.id), [apt(1, 2)]);
+  assert.equal(pending[0].status.lastVisit.opened, false, 'previous result is shown as hint');
 
   const all = M.apartmentsForSession(s, second.id, entrance.id, { showDone: true });
   assert.equal(all.length, 4);
-  assert.equal(all.filter((a) => a.status.doneBefore).length, 2);
+  assert.equal(all.filter((a) => a.status.doneBefore).length, 3);
+  assert.equal(all.find((a) => a.id === apt(1, 1)).status.lastVisit.reason, M.REASONS.NO_CASH);
 
   rec(second.id, apt(1, 1), { opened: true, moneyReceived: true, amount: 5 });
   assert.equal(M.apartmentStatus(s, area.id, apt(1, 1), second.id).current.amount, 5);
@@ -116,6 +117,6 @@ test('repeated visits: done apartments are hidden in later sessions and can be s
 test('isVisitFinal rules', () => {
   assert.equal(M.isVisitFinal({ opened: false }), false);
   assert.equal(M.isVisitFinal({ opened: true, moneyReceived: true }), true);
-  assert.equal(M.isVisitFinal({ opened: true, moneyReceived: false, reason: M.REASONS.NO_CASH }), false);
+  assert.equal(M.isVisitFinal({ opened: true, moneyReceived: false, reason: M.REASONS.NO_CASH }), true);
   assert.equal(M.isVisitFinal({ opened: true, moneyReceived: false, reason: M.REASONS.NO_WILL }), true);
 });

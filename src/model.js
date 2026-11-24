@@ -205,6 +205,11 @@ export function updateEntrance(state, areaId, entranceId, input) {
   const existing = findEntrance(state, areaId, entranceId);
   if (!existing) throw new Error('Eingang nicht gefunden.');
   const entrance = buildEntrance(entranceId, { ...existing, ...input });
+  const previousApartments = new Map(existing.apartments.map((apt) => [apt.id, apt]));
+  entrance.apartments = entrance.apartments.map((apt) => {
+    const previous = previousApartments.get(apt.id);
+    return previous && 'note' in previous ? { ...apt, note: previous.note } : apt;
+  });
   const validIds = new Set(entrance.apartments.map((a) => a.id));
   return {
     ...state,
@@ -229,6 +234,21 @@ export function deleteEntrance(state, areaId, entranceId) {
     sessions: state.sessions.map((s) =>
       s.areaId === areaId ? { ...s, visits: s.visits.filter((v) => v.entranceId !== entranceId) } : s,
     ),
+  };
+}
+
+export function updateApartmentNote(state, areaId, entranceId, aptId, note) {
+  const entrance = findEntrance(state, areaId, entranceId);
+  if (!entrance?.apartments.some((apt) => apt.id === aptId)) throw new Error('Wohnung nicht gefunden.');
+  return {
+    ...state,
+    areas: state.areas.map((area) => area.id !== areaId ? area : {
+      ...area,
+      entrances: area.entrances.map((e) => e.id !== entranceId ? e : {
+        ...e,
+        apartments: e.apartments.map((apt) => apt.id === aptId ? { ...apt, note: String(note ?? '').trim() } : apt),
+      }),
+    }),
   };
 }
 
@@ -337,11 +357,11 @@ function replaceSession(state, sessionId, patch) {
 // ---------- Apartment status across sessions ----------
 
 /**
- * An apartment counts as "abgearbeitet" (done) once someone opened and either gave money or
- * clearly declined ("kein Wille"). "Nicht geöffnet" and "kein Bargeld" stay open for a revisit.
+ * An apartment counts as "abgearbeitet" (done) once someone opened.
+ * It remains accessible for another visit with the show-done toggle.
  */
 export function isVisitFinal(visit) {
-  return Boolean(visit?.opened && (visit.moneyReceived || visit.reason === REASONS.NO_WILL));
+  return Boolean(visit?.opened);
 }
 
 export function sessionsOfArea(state, areaId) {
@@ -381,7 +401,7 @@ export function apartmentStatus(state, areaId, aptId, sessionId = null) {
   };
 }
 
-/** Apartments of an entrance for a session, hiding those already done in other sessions unless `showDone`. */
+/** Apartments of an entrance for a session, hiding all completed apartments unless `showDone`. */
 export function apartmentsForSession(state, sessionId, entranceId, { showDone = false } = {}) {
   const session = findSession(state, sessionId);
   if (!session) throw new Error('Sammelgang nicht gefunden.');
@@ -389,7 +409,7 @@ export function apartmentsForSession(state, sessionId, entranceId, { showDone = 
   if (!entrance) throw new Error('Eingang nicht gefunden.');
   return entrance.apartments
     .map((apt) => ({ ...apt, status: apartmentStatus(state, session.areaId, apt.id, sessionId) }))
-    .filter((apt) => showDone || !apt.status.doneBefore);
+    .filter((apt) => showDone || !apt.status.done);
 }
 
 export function entranceStats(state, areaId, entranceId) {

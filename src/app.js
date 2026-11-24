@@ -21,6 +21,7 @@ const duration = (min) => (min === null || min === undefined ? '' : min >= 60 ? 
 
 let state = M.emptyState();
 let storage;
+let accessConfirmed = false;
 const drafts = new Map(); // apartmentId -> partial visit being entered
 let showDone = localStorage.getItem('showDone') === '1';
 
@@ -271,11 +272,19 @@ function viewApartment(areaId, entranceId, aptId) {
   return `
   ${header(`${e.name} · ${apt.label}`, `#/area/${areaId}/entrance/${e.id}`)}
   <p class="card">${st.done ? '✓ Abgearbeitet – wird in neuen Sammelgängen standardmäßig ausgeblendet.' : 'Noch offen – erscheint in neuen Sammelgängen.'}</p>
+  ${apartmentNoteForm(areaId, e.id, apt)}
   <h2>Historie</h2>
   ${history.length ? '' : '<p class="empty">Noch keine Besuche.</p>'}
   <div class="list">${history
     .map((v) => `<a class="card row between" href="#/session/${v.sessionId}"><span>${dt(v.at)}<br><small>Sammelgang ${dt(v.sessionStartedAt)}</small></span>${visitBadge(v)}</a>`)
     .join('')}</div>`;
+}
+
+function apartmentNoteForm(areaId, entranceId, apt, readOnly = false) {
+  return `<form class="form apartment-note" data-form="apartment-note" data-area="${esc(areaId)}" data-entrance="${esc(entranceId)}" data-apt="${esc(apt.id)}">
+    <label>Wohnungsnotiz<textarea name="note" rows="2" ${readOnly ? 'readonly' : ''}>${esc(apt.note)}</textarea></label>
+    ${readOnly ? '' : '<button class="btn small">Notiz speichern</button>'}
+  </form>`;
 }
 
 function viewSession(sessionId) {
@@ -326,7 +335,7 @@ function viewSession(sessionId) {
   <button class="btn danger block" data-action="delete-session" data-id="${s.id}">Sammelgang löschen</button>`;
 }
 
-function aptRecorder(s, apt) {
+function aptRecorder(s, apt, entranceId) {
   const cur = apt.status.current;
   const draft = drafts.get(apt.id);
   const prev = apt.status.lastVisit;
@@ -337,7 +346,7 @@ function aptRecorder(s, apt) {
     if (!draft) {
       controls = `<div class="btn-row">
         <button class="btn small ok" data-action="opened" data-apt="${id}" data-value="1">Geöffnet</button>
-        <button class="btn small" data-action="opened" data-apt="${id}" data-value="0">Nicht geöffnet</button>
+        <button class="btn small ${cur?.opened === false ? 'not-opened' : ''}" aria-pressed="${cur?.opened === false}" data-action="opened" data-apt="${id}" data-value="0">Nicht geöffnet</button>
         ${cur ? `<button class="btn small ghost" data-action="clear-visit" data-apt="${id}" aria-label="Zurücksetzen">↺</button>` : ''}
       </div>`;
     } else if (draft.moneyReceived === undefined) {
@@ -361,6 +370,7 @@ function aptRecorder(s, apt) {
     <div class="row between"><strong>Whg. ${apt.index}</strong>${cur ? visitBadge(cur) : apt.status.doneBefore ? '<span class="badge success">✓ erledigt</span>' : visitBadge(null)}</div>
     ${prev ? `<small class="prev">Zuletzt (${dt(prev.at)}): ${visitBadge(prev)}</small>` : ''}
     ${controls}
+    ${apartmentNoteForm(s.areaId, entranceId, apt, readOnly)}
   </div>`;
 }
 
@@ -378,7 +388,7 @@ function viewSessionEntrance(sessionId, entranceId) {
     Bereits abgearbeitete Wohnungen anzeigen ${hidden ? `<small>(${hidden} ausgeblendet)</small>` : ''}</label>
   ${apts.length ? '' : '<p class="empty">🎉 Alle Wohnungen dieses Eingangs sind bereits abgearbeitet.</p>'}
   ${floors
-    .map((f) => `<section class="floor"><h3>${f.label}</h3><div class="list">${f.apartments.map((apt) => aptRecorder(s, apt)).join('')}</div></section>`)
+    .map((f) => `<section class="floor"><h3>${f.label}</h3><div class="list">${f.apartments.map((apt) => aptRecorder(s, apt, e.id)).join('')}</div></section>`)
     .join('')}
   <a class="btn block" href="#/session/${s.id}">Zurück zum Sammelgang</a>`;
 }
@@ -401,6 +411,7 @@ function viewData() {
     <h2>Export</h2>
     <button class="btn block" data-action="export-json">JSON-Sicherung herunterladen</button>
     <button class="btn block" data-action="export-visits">CSV: Besuche</button>
+    <button class="btn block" data-action="export-apartments">CSV: Wohnungen & Notizen</button>
     <button class="btn block" data-action="export-sessions">CSV: Sammelgänge</button>
     <button class="btn block" data-action="export-setup">CSV: Gebiete & Eingänge</button>
   </section>
@@ -441,6 +452,16 @@ function route() {
 }
 
 function render() {
+  $nav.hidden = !accessConfirmed;
+  if (!accessConfirmed) {
+    $main.innerHTML = `${header('Zugangscode eingeben')}
+      <form class="card form" data-form="access">
+        <input name="code" type="text" inputmode="numeric" aria-label="Zugangscode" autocomplete="off" required data-autofocus>
+        <button class="btn primary block">Bestätigen</button>
+      </form>`;
+    $main.querySelector('[data-autofocus]')?.focus();
+    return;
+  }
   const [tab, html] = route();
   $main.innerHTML = html;
   const running = state.sessions.find((s) => !s.endedAt);
@@ -535,6 +556,9 @@ document.addEventListener('click', (ev) => {
     case 'export-visits':
       download('sammelgebiet-besuche.csv', D.exportVisitsCsv(state), 'text/csv;charset=utf-8');
       break;
+    case 'export-apartments':
+      download('sammelgebiet-wohnungen.csv', D.exportApartmentsCsv(state), 'text/csv;charset=utf-8');
+      break;
     case 'export-sessions':
       download('sammelgebiet-sammelgaenge.csv', D.exportSessionsCsv(state), 'text/csv;charset=utf-8');
       break;
@@ -589,6 +613,19 @@ document.addEventListener('submit', (ev) => {
   const f = Object.fromEntries(new FormData(form));
   const { id } = form.dataset;
   switch (form.dataset.form) {
+    case 'access':
+      if (f.code !== '04122026') {
+        toast('Der Zugangscode stimmt nicht.', 'error');
+        return;
+      }
+      accessConfirmed = true;
+      clearTimeout(toast.t);
+      $toast.className = 'toast';
+      render();
+      break;
+    case 'apartment-note':
+      act((st) => M.updateApartmentNote(st, form.dataset.area, form.dataset.entrance, form.dataset.apt, f.note), 'Notiz gespeichert');
+      break;
     case 'area':
       try {
         if (id) {

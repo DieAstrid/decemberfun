@@ -46,7 +46,14 @@ export function normalizeState(raw) {
       assert(isStr(e.name) && e.name.trim(), 'Eingang ohne Namen');
       const counts = normalizeApartmentsPerFloor(e.floors, e.apartmentsPerFloor);
       const apartments = generateApartments(e.id, counts.length, counts);
+      assert(e.apartments === undefined || Array.isArray(e.apartments), `Eingang ${e.name}: ungültige Wohnungen`);
+      const savedApartments = new Map((e.apartments ?? []).map((apt) => [apt?.id, apt]));
       for (const apt of apartments) {
+        const saved = savedApartments.get(apt.id);
+        if (saved && 'note' in saved) {
+          assert(isStr(saved.note), `Wohnung ${apt.id}: ungültige Notiz`);
+          apt.note = saved.note;
+        }
         assert(!aptIndex.has(apt.id), `doppelte Wohnung ${apt.id}`);
         aptIndex.set(apt.id, { areaId: a.id, entranceId: e.id });
       }
@@ -172,7 +179,7 @@ const yesNo = (b) => (b === null || b === undefined ? '' : b ? 'ja' : 'nein');
 /** One row per recorded apartment visit. */
 export function exportVisitsCsv(state) {
   const rows = [
-    ['Gebiet', 'Eingang', 'Adresse', 'Etage', 'Wohnung', 'Sammelgang Start', 'Sammelgang Ende', 'Zeitpunkt', 'Geöffnet', 'Geld erhalten', 'Betrag', 'Grund'],
+    ['Gebiet', 'Eingang', 'Adresse', 'Etage', 'Wohnung', 'Sammelgang Start', 'Sammelgang Ende', 'Zeitpunkt', 'Geöffnet', 'Geld erhalten', 'Betrag', 'Grund', 'Wohnungsnotiz'],
   ];
   for (const s of state.sessions) {
     const area = findArea(state, s.areaId);
@@ -192,7 +199,21 @@ export function exportVisitsCsv(state) {
         yesNo(v.moneyReceived),
         fmtNum(v.amount),
         v.reason ? REASON_LABELS[v.reason] : '',
+        apt?.note ?? '',
       ]);
+    }
+  }
+  return toCsv(rows);
+}
+
+/** Includes apartment notes even when no visit has been recorded yet. */
+export function exportApartmentsCsv(state) {
+  const rows = [['Gebiet', 'Eingang', 'Adresse', 'Etage', 'Wohnung', 'Wohnungsnotiz']];
+  for (const area of state.areas) {
+    for (const entrance of area.entrances) {
+      for (const apt of entrance.apartments) {
+        rows.push([area.name, entrance.name, entrance.address, floorLabel(apt.floor), apt.index, apt.note ?? '']);
+      }
     }
   }
   return toCsv(rows);

@@ -35,6 +35,38 @@ test('importJson rejects invalid backups', () => {
   assert.throws(() => D.importJson(JSON.stringify(twoOpen)), /mehrere laufende/);
 });
 
+test('apartment notes survive backups, entrance edits and CSV escaping, including unvisited apartments', () => {
+  let { s, area, entrance } = sample();
+  const note = 'Bitte klingeln; "Hof"\nAbends';
+  const aptId = entrance.apartments[0].id;
+  const unvisitedId = entrance.apartments[2].id;
+  s = M.updateApartmentNote(s, area.id, entrance.id, aptId, note);
+  s = M.updateApartmentNote(s, area.id, entrance.id, unvisitedId, 'Noch nicht besucht');
+  s = D.importJson(D.exportJson(s));
+  assert.equal(M.findEntrance(s, area.id, entrance.id).apartments[0].note, note);
+  s = M.updateEntrance(s, area.id, entrance.id, { floors: 3, apartmentsPerFloor: 2 });
+  const apartments = M.findEntrance(s, area.id, entrance.id).apartments;
+  assert.equal(apartments.find((apt) => apt.id === aptId).note, note);
+  assert.equal(apartments.find((apt) => apt.id === unvisitedId).note, 'Noch nicht besucht');
+  assert.equal(apartments.find((apt) => apt.floor === 2).note, undefined);
+  const visits = D.parseCsv(D.exportVisitsCsv(s));
+  assert.equal(visits[1][visits[0].indexOf('Wohnungsnotiz')], note);
+  const rows = D.parseCsv(D.exportApartmentsCsv(s));
+  assert.equal(rows.length, apartments.length + 1);
+  assert.equal(rows[1][5], note);
+  assert.ok(rows.some((row) => row[5] === 'Noch nicht besucht'));
+  s = M.updateApartmentNote(s, area.id, entrance.id, aptId, '');
+  assert.equal(D.importJson(D.exportJson(s)).areas[0].entrances[0].apartments[0].note, '');
+  assert.throws(() => M.updateApartmentNote(s, area.id, entrance.id, 'missing', 'x'), /Wohnung nicht gefunden/);
+});
+
+test('legacy backups without apartment notes remain unchanged', () => {
+  const { s } = sample();
+  assert.deepEqual(D.importJson(D.exportJson(s)), s);
+  s.areas[0].entrances[0].apartments[0].note = 42;
+  assert.throws(() => D.importJson(D.exportJson(s)), /ungültige Notiz/);
+});
+
 test('CSV escaping and parsing round-trip', () => {
   const rows = [['a;b', 'say "hi"', 'line\nbreak', ''], ['1', '2,5', 'x', 'y']];
   assert.deepEqual(D.parseCsv(D.toCsv(rows)), rows);
