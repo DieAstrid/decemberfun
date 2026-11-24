@@ -16,7 +16,7 @@ test('optical code gate, persisted status and apartment note interactions', asyn
   const sortEntrances = {};
   for (const [name, count] of [['Alpha', 1], ['Beta', 2], ['Delta', 1], ['Zulu', 2]]) {
     let item;
-    ({ state, entrance: item } = M.addEntrance(state, sortArea.id, { name, floors: 1, apartmentsPerFloor: count }));
+    ({ state, entrance: item } = M.addEntrance(state, sortArea.id, { name, address: name === 'Beta' ? 'Weg <1>' : '', floors: 1, apartmentsPerFloor: count }));
     sortEntrances[name] = item;
   }
   ({ state, session: sortSession } = M.startSession(state, sortArea.id, new Date(2026, 10, 24, 9, 0)));
@@ -198,8 +198,8 @@ test('optical code gate, persisted status and apartment note interactions', asyn
     await settle();
   };
   assert.deepEqual(order(), ['Zulu', 'Alpha', 'Beta', 'Delta']);
-  assert.match(main.innerHTML, /2 Whg\. · 1 erledigt · 0 offen · 2 übersprungen/);
-  assert.match(main.innerHTML, /1 Whg\. · 0 erledigt · 0 offen · 1 übersprungen/);
+  assert.match(main.innerHTML, /Weg &lt;1&gt;<br>2 Whg\. · 0 offen<br>1 erledigt · 2 übersprungen/);
+  assert.match(main.innerHTML, /1 Whg\. · 0 offen<br>0 erledigt · 1 übersprungen/);
   assert.doesNotMatch(main.innerHTML, /1 Etagen ·/);
   await change('entrance-sort', { value: 'name-asc' });
   assert.deepEqual(order(), ['Alpha', 'Beta', 'Delta', 'Zulu']);

@@ -381,7 +381,7 @@ function viewArea(areaId) {
         .map(({ entrance: e, stats: st }) => {
           return `<div class="card row between">
             <a class="grow" href="#/area/${a.id}/entrance/${e.id}"><strong>${esc(e.name)}</strong><br>
-              <small>${esc(e.address)}${e.address ? ' · ' : ''}${st.total} Whg. · ${st.done} erledigt · ${st.open} offen · ${st.skipped} übersprungen</small></a>
+              <small>${e.address ? `${esc(e.address)}<br>` : ''}${st.total} Whg. · ${st.open} offen<br>${st.done} erledigt · ${st.skipped} übersprungen</small></a>
             <a class="btn small ghost" href="#/area/${a.id}/entrance/${e.id}/edit" aria-label="Bearbeiten">✎</a>
           </div>`;
         })
